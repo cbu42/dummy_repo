@@ -1,0 +1,49 @@
+.slider {
+  /* default is width 400 and margin 10 */
+	width: 400;
+	margin: 10px;
+}
+
+.grid-container {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+	grid-gap: 1rem;
+	/*grid-template-rows: auto;*/
+	/* background-color: #2196F3; */
+	/*padding: 0px;
+	align-items: center;
+	justify-items: center;*/
+}
+  
+.grid-container > div {
+	/* background-color: rgba(255, 255, 255, 0.8); */
+	text-align: center;
+	padding: 0px 0px;
+	font-size: 30px;
+}
+
+.img-scale-down {
+    width: 100%;
+    height: 100%;
+    object-fit: scale-down;
+    overflow: hidden;
+}
+
+/*change_cb */
+
+.loc1 {
+	max-width: 270px;
+	max-height: 270px;
+}
+.loc2 {
+	max-width: 270px;
+	max-height: 270px;
+}
+.loc3 {
+	max-width: 270px;
+	max-height: 270px;
+}
+.loc4 {
+	max-width: 270px;
+	max-height: 270px;
+}
