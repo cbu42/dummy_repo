@@ -8,7 +8,7 @@ theme_set(theme_bw())
 # color-blind-friendly palette
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") 
 
-df = read.csv("trials_merged.csv", header = TRUE)
+df = read_csv("trials_merged.csv", header = TRUE)
 demo = read.csv("subject_info_merged.csv", header = TRUE)
 
 #formatting
@@ -16,6 +16,7 @@ df$response = gsub(" ","",df$response)
 df$response = gsub("\\[","",df$response)
 df$response = gsub("\\]","",df$response)
 df$response = gsub("\\'","",df$response)
+#could be problematic
 df$response = gsub("AOI","",df$response)
 
 df = df %>%
@@ -24,6 +25,10 @@ df = df %>%
   ungroup() %>%
   mutate(trial_group = ifelse(trial_number<31,"first_half","second_half"))
 
+#assumes four clicks
+#rename the clicks
+#if three entries, name them baseline, modifier, noun
+#else, baseline and noun
 df = separate(df,response,into=c("click1","click2","click3","click4"),sep=",")
 
 # run 2 models: 
@@ -35,7 +40,10 @@ dmodel =  df %>%
   filter(ExpFiller=="Exp") %>%
   select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3) %>%
   mutate(ID = row_number()) %>%
+  # row per click, not per trial
   gather(click_number,location,click1:click4) %>%
+  # binary var for if they clicked the intended referent
+  # remove periods in front 
   mutate(target=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
   mutate(competitor=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0)))
 
@@ -48,6 +56,7 @@ ddet = dmodel %>%
   mutate(item=word(as.character(instruction3), -1)) %>% 
   droplevels() 
 
+# be sure to accommodate new click names
 d_baseline = ddet %>% 
   filter(click_number == "click1") %>% 
   droplevels()
@@ -67,25 +76,25 @@ nrow(d_determiner) # 3978
 nrow(d_noun) # 4043
 
 # no effect, as expected in prior window
-dc_baseline = cbind(d_baseline,myCenter(d_baseline[,c("size","condition")]))
-m.baseline = glmer(target ~ condition*csize + (1+condition+csize|workerid) + (1|item),family="binomial",data=dc_baseline)
-summary(m.baseline)
-
-# no effect, as expected in gender window
-dc_gender = cbind(d_gender,myCenter(d_gender[,c("size","condition")]))
-m.gender = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_gender)
-summary(m.gender)
-
-# the crucial window: (still work on convergence issues)
-contrasts(d_determiner$size) # big reference level
-dc_determiner = cbind(d_determiner,myCenter(d_determiner[,c("size","condition")]))
-m.determiner = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_determiner)
-summary(m.determiner)
-
-dc_noun = cbind(d_noun,myCenter(d_noun[,c("size","condition")]))
-m.noun = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_noun)
-summary(m.noun)
-
-# simple effects analysis to probe interaction in determiner window
-m_determiner.simple = glmer(target ~ condition*size-size + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_determiner)
-summary(m_determiner.simple)
+# dc_baseline = cbind(d_baseline,myCenter(d_baseline[,c("size","condition")]))
+# m.baseline = glmer(target ~ condition*csize + (1+condition+csize|workerid) + (1|item),family="binomial",data=dc_baseline)
+# summary(m.baseline)
+# 
+# # no effect, as expected in gender window
+# dc_gender = cbind(d_gender,myCenter(d_gender[,c("size","condition")]))
+# m.gender = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_gender)
+# summary(m.gender)
+# 
+# # the crucial window: (still work on convergence issues)
+# contrasts(d_determiner$size) # big reference level
+# dc_determiner = cbind(d_determiner,myCenter(d_determiner[,c("size","condition")]))
+# m.determiner = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_determiner)
+# summary(m.determiner)
+# 
+# dc_noun = cbind(d_noun,myCenter(d_noun[,c("size","condition")]))
+# m.noun = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_noun)
+# summary(m.noun)
+# 
+# # simple effects analysis to probe interaction in determiner window
+# m_determiner.simple = glmer(target ~ condition*size-size + (1+condition+size|workerid) + (1|item),family="binomial",data=dc_determiner)
+# summary(m_determiner.simple)

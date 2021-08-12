@@ -1,5 +1,8 @@
 library(tidyverse)
 library(lme4)
+install.packages("stringr")
+library(stringr)
+
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("helpers.R")
@@ -9,67 +12,138 @@ theme_set(theme_bw())
 # color-blind-friendly palette
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") 
 
-df = read.csv("trials_merged.csv", header = TRUE)
-demo = read.csv("subject_info_merged.csv", header = TRUE)
+# df = read.csv("trials_merged.csv", header = TRUE)
+# demo = read.csv("subject_info_merged.csv", header = TRUE)
+df = read_csv("ryskin-trials.csv")
+demo = read.csv("ryskin-subject_information.csv", header = TRUE)
 
-#formatting
-df$response = gsub(" ","",df$response)
-df$response = gsub("\\[","",df$response)
-df$response = gsub("\\]","",df$response)
-df$response = gsub("\\'","",df$response)
-df$response = gsub("AOI","",df$response)
+#remove error column
+df$error <- NULL
+
+#trial numbers have to be reduced by 2
+df$trial_number <- df$trial_number-2
+
+#removing periods from the loc ids
+df$loc_big_filler <- gsub("\\.", "", df$loc_big_filler)
+df$loc_contrast = gsub("\\.","",df$loc_contrast)
+df$loc_small_filler = gsub("\\.","",df$loc_small_filler)
+df$loc_target_pic = gsub("\\.","",df$loc_target_pic)
+
+word <- word(df$instruction, -1)
 
 df = df %>%
   group_by(workerid)%>%
   mutate(trial_number = seq(1:n())) %>%
   ungroup() %>%
-  mutate(trial_group = ifelse(trial_number<31,"first_half","second_half")) %>% 
-  mutate(item=word(as.character(instruction3), -1))
+  mutate(item=word)
 
-df = separate(df,response,into=c("click1","click2","click3","click4"),sep=",")
+#rename the clicks
+#if three entries, name them baseline, modifier, noun
+#else, baseline and noun
 
+
+df = df %>% 
+  separate(response,into = c("click1", "click2", "click3"), sep=",")
+
+# df = df %>% 
+#   separate(response,into = c("baseline", "click2", "click3"), sep=",")
+
+# df$selection_correct <- c()
+# df$modifier <- c()
+# df$noun <- c()
+# for(i in 1:nrow(df)) {       # for-loop over rows
+#   if(df$utterance_type[i] == "unmodified") {
+#     #new stuff
+#     df$noun[i] <- df$click2[i]
+#     if(df$click2[i]==df$loc_target_pic[i]) {
+#       df$selection_correct[i] = TRUE
+#     } else {
+#       df$selection_correct[i] = FALSE
+#     }
+#   }
+#   if(df$utterance_type[i] == "modified") {
+#     df$modifier[i] <- df$click2[i]
+#     df$noun[i] <- df$click3[i]
+#     if(df$click3[i]==df$loc_target_pic[i]) {
+#       df$selection_correct[i] = TRUE
+#     } else {
+#       df$selection_correct[i] = FALSE
+#     }
+#   }
+# }
+# df$click2 <- NULL
+# df$click3 <- NULL
+
+view(df)
+
+#clean click values
+df$click1 <- gsub("\\[", "", df$click1)
+df$click1 <- gsub("\\'", "", df$click1)
+df$click2 <- gsub("\\]", "", df$click2)
+df$click2 <- gsub("\\'", "", df$click2)
+df$click3 <- gsub("\\]", "", df$click3)
+df$click3 <- gsub("\\'", "", df$click3)
+
+view(df)
 ### EXCLUSIONS
-df = df %>%
-  mutate(selection_correct = ifelse(as.numeric(click4) == as.numeric(target1),1,ifelse(as.numeric(click4) == as.numeric(target2),1,0)))
 
-table(df$selection_correct) # 665 incorrect responses
+df$selection_correct <- c()
+for(i in 1:nrow(df)) {       # for-loop over rows
+  if(df$utterance_type[i] == "unmodified") {
+    if(df$click2[i]==df$loc_target_pic[i]) {
+      df$selection_correct[i] = TRUE
+    } else {
+      df$selection_correct[i] = FALSE
+    }
+  }
+  if(df$utterance_type[i] == "modified") {
+    if(df$click3[i]==df$loc_target_pic[i]) {
+      df$selection_correct[i] = TRUE
+    } else {
+      df$selection_correct[i] = FALSE
+    }
+  }
+}
 
+table(df$selection_correct) # 267 incorrect responses for pilot
+view(df)
+table(df$trialType)
 # exclude anyone with < 95% correct selections
+
 accuracy = df %>% 
-  filter(ExpFiller != "Prac") %>% 
+  filter(trialType == "test") %>% 
   group_by(workerid) %>% 
   tally(selection_correct) %>% 
-  mutate(correct=n/48) 
+  mutate(correct=n/40) #40 test trials total
 
 View(accuracy %>% arrange(n))
 
 toexclude = accuracy %>% 
   filter(correct < .95)
 
-length(toexclude$workerid) # exclude 29 subjects
-length(toexclude$workerid)/length(accuracy$workerid) # exclude 24% of subjects
+length(toexclude$workerid) # exclude 1 for pilot (2 were me)
+length(toexclude$workerid)/length(accuracy$workerid) # exclude 25% of subjects for pilot
 
 df = df %>% 
   filter(!workerid %in% toexclude$workerid)
 
-unique(demo$language) # no exlusions (some people left it blank?)
+#unique(demo$language) # no exlusions (some people left it blank?)
 
-# trials with incorrect selections
+# remove trials with incorrect selections
 df = df %>% 
   filter(selection_correct==1)
 
-nrow(df) # 4348
+nrow(df) # 729 for pilot
 
 # get only experimental trials (no fillers) for further analysis
 df = df %>% 
-  filter(ExpFiller=="Exp") %>%
+  filter(trialType == "test") %>%
   droplevels()
 
 ### PART I: PLOT DATA FROM REPLICATION TASK
 
 # plot proportion of selections by condition
 toplot =  df %>%
-  filter(ExpFiller=="Exp") %>%
   select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3) %>%
   mutate(ID = row_number()) %>%
   gather(click_number,location,click1:click4) %>%
@@ -302,6 +376,7 @@ ggplot(toplot, aes(x=prop_selections, y=prop_looks)) +
   xlim(0,1) +
   ylim(0,1) +
   # coord_fixed() +
+  #facets by window. for each window it recreates the same plot
   facet_wrap(~window,nrow=1) 
 ggsave("../graphs/corr-window.pdf",width=10,height=2.5)
 
