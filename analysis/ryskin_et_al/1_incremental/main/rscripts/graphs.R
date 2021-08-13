@@ -1,8 +1,6 @@
 library(tidyverse)
 library(lme4)
-install.packages("stringr")
 library(stringr)
-
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("helpers.R")
@@ -32,9 +30,6 @@ df$loc_target_pic = gsub("\\.","",df$loc_target_pic)
 word <- word(df$instruction, -1)
 
 df = df %>%
-  group_by(workerid)%>%
-  mutate(trial_number = seq(1:n())) %>%
-  ungroup() %>%
   mutate(item=word)
 
 #rename the clicks
@@ -43,72 +38,42 @@ df = df %>%
 
 
 df = df %>% 
-  separate(response,into = c("click1", "click2", "click3"), sep=",")
-
-# df = df %>% 
-#   separate(response,into = c("baseline", "click2", "click3"), sep=",")
-
-# df$selection_correct <- c()
-# df$modifier <- c()
-# df$noun <- c()
-# for(i in 1:nrow(df)) {       # for-loop over rows
-#   if(df$utterance_type[i] == "unmodified") {
-#     #new stuff
-#     df$noun[i] <- df$click2[i]
-#     if(df$click2[i]==df$loc_target_pic[i]) {
-#       df$selection_correct[i] = TRUE
-#     } else {
-#       df$selection_correct[i] = FALSE
-#     }
-#   }
-#   if(df$utterance_type[i] == "modified") {
-#     df$modifier[i] <- df$click2[i]
-#     df$noun[i] <- df$click3[i]
-#     if(df$click3[i]==df$loc_target_pic[i]) {
-#       df$selection_correct[i] = TRUE
-#     } else {
-#       df$selection_correct[i] = FALSE
-#     }
-#   }
-# }
-# df$click2 <- NULL
-# df$click3 <- NULL
-
-view(df)
+  separate(response,into = c("click_prior", "click2", "click3"), sep=",")
 
 #clean click values
-df$click1 <- gsub("\\[", "", df$click1)
-df$click1 <- gsub("\\'", "", df$click1)
+df$click_prior <- gsub("\\[", "", df$click_prior)
+df$click_prior <- gsub("\\'", "", df$click_prior)
 df$click2 <- gsub("\\]", "", df$click2)
 df$click2 <- gsub("\\'", "", df$click2)
+df$click2 <- gsub(" ", "", df$click2)
 df$click3 <- gsub("\\]", "", df$click3)
 df$click3 <- gsub("\\'", "", df$click3)
+df$click3 <- gsub(" ", "", df$click3)
 
-view(df)
+df = df %>% 
+  mutate(click_noun = case_when(is.na(click3) ~ click2,
+                                TRUE ~ click3)) %>% 
+  mutate(click_adj = case_when(is.na(click3) ~ "NA",
+                               TRUE ~ click2)) %>% 
+  select(-click2, -click3)
+
+df = df %>% 
+  separate(target_pic, into = c("noun","feature"), sep="[_.]", remove=F, extra="drop") %>% 
+  mutate(loc_competitor_pic = case_when(feature == "small" ~ loc_small_filler,
+                                        feature == "big" ~ loc_big_filler,
+                                        TRUE ~ "NA"))
+
 ### EXCLUSIONS
 
-df$selection_correct <- c()
-for(i in 1:nrow(df)) {       # for-loop over rows
-  if(df$utterance_type[i] == "unmodified") {
-    if(df$click2[i]==df$loc_target_pic[i]) {
-      df$selection_correct[i] = TRUE
-    } else {
-      df$selection_correct[i] = FALSE
-    }
-  }
-  if(df$utterance_type[i] == "modified") {
-    if(df$click3[i]==df$loc_target_pic[i]) {
-      df$selection_correct[i] = TRUE
-    } else {
-      df$selection_correct[i] = FALSE
-    }
-  }
-}
+df = df %>% 
+  mutate(selection_correct = click_noun == loc_target_pic)
 
 table(df$selection_correct) # 267 incorrect responses for pilot
 view(df)
 table(df$trialType)
-# exclude anyone with < 95% correct selections
+
+# exclude anyone with < 90% correct selections on all trials where correct selection was possible from linguistic signal
+# UPDATE THIS CODE
 
 accuracy = df %>% 
   filter(trialType == "test") %>% 
@@ -135,36 +100,41 @@ df = df %>%
 
 nrow(df) # 729 for pilot
 
+
+# MAKE SURE THE ABOVE EXCLUSION CODE DOES THE RIGHT THING
 # get only experimental trials (no fillers) for further analysis
-df = df %>% 
+d_test = df %>% 
   filter(trialType == "test") %>%
   droplevels()
 
 ### PART I: PLOT DATA FROM REPLICATION TASK
 
 # plot proportion of selections by condition
-toplot =  df %>%
-  select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3) %>%
-  mutate(ID = row_number()) %>%
-  gather(click_number,location,click1:click4) %>%
-  mutate(target=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
-  mutate(competitor=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0))) %>%
-  group_by(condition,size,click_number) %>%
+toplot =  d_test %>%
+  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
+  pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
+  mutate(target = case_when(loc_target_pic==selection ~ 1,
+                            TRUE ~ 0)) %>% 
+  mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
+                                TRUE ~ 0)) %>% 
+  # CASEY: WRITE CODE LIKE IN 116-119 TO GET DISTRACTOR (CONTRAST AND OTHER FILLER SELECTIONS)
+  group_by(cond,pragContext,window) %>%
   summarize(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
-  gather(location,Mean,m_target:m_competitor) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_competitor) %>%
   mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
   mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
   mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
   mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
   mutate(Region=fct_rev(Region)) %>%
-  ungroup() %>%
-  mutate(click_number=fct_recode(click_number,prior="click1",gender="click2",determiner="click3",noun="click4"))
+  ungroup() %>% 
+  mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
+  mutate(window = fct_relevel(window,"prior","adjective"))
 
-proportions = ggplot(toplot, aes(x=click_number, y=Mean, group=Region)) +
+proportions = ggplot(toplot, aes(x=window, y=Mean, group=Region)) +
   geom_line(aes(color=Region),size=1.3) +
   geom_point(aes(color=Region),size=2.5,shape="square") +
   geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
-  facet_grid(size ~condition ) + 
+  facet_grid(cond ~ pragContext ) + 
   scale_color_manual(values=c("darkgreen","orange")) +
   xlab("Window") +
   ylab("Proportion of selections") +
@@ -174,6 +144,8 @@ proportions
 
 ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
 
+
+# CASEY: CONTINUE HERE
 # plot proportion of selections by condition and experiment half
 toplot =  df %>%
   filter(ExpFiller=="Exp") %>%

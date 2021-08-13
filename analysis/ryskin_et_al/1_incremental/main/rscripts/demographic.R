@@ -1,7 +1,14 @@
 library(tidyverse)
+
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+source("helpers.R")
 setwd('../data')
-d = read.csv("subject_info_merged.csv", header = TRUE)
+theme_set(theme_bw())
+
+# color-blind-friendly palette
+cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") 
+
+d = read.csv("ryskin-subject_information.csv", header = TRUE)
 
 # look at comments
 unique(d$comments,d$workerid)
@@ -39,23 +46,17 @@ ggplot(d, aes(x=language)) +
   theme(axis.text.x=element_text(angle=45, hjust=1, vjust=1))
 
 # average time 
-df = read.csv("trials_merged.csv", header = TRUE)
+df = read_csv("ryskin-time_in_minutes.csv")
 
 times = df %>%
-  select(workerid,Answer.time_in_minutes) %>%
+  select(workerid,time_in_minutes) %>%
   unique()
 
-times = times %>% 
-  left_join(d,by = c("workerid"))
-
-ggplot(times, aes(x=Answer.time_in_minutes)) +
+ggplot(times, aes(x=time_in_minutes)) +
   geom_histogram()
 
 ggplot(times, aes(x=age, y=Answer.time_in_minutes)) +
   geom_point()+
   geom_smooth(method="lm")
 
-times %>%
-  filter(Answer.time_in_minutes<8) %>%
-  select(workerid,Answer.time_in_minutes)
-
+mean(times$time_in_minutes)
