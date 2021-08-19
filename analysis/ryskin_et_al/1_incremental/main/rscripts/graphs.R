@@ -7,6 +7,8 @@ source("helpers.R")
 setwd('../data')
 theme_set(theme_bw())
 
+view(unique(foo$workerid))
+
 # color-blind-friendly palette
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") 
 
@@ -17,6 +19,11 @@ demo = read.csv("ryskin-subject_information.csv", header = TRUE)
 
 #remove error column
 df$error <- NULL
+df$proliferate.condition <- NULL
+#remove pilot trials (unless we want to keep the non-me ones)
+`%notin%` <- Negate(`%in%`)
+df <- df[df$workerid %notin% c(17, 13, 16, 19, 14, 18),]
+
 
 #trial numbers have to be reduced by 2
 df$trial_number <- df$trial_number-2
@@ -26,16 +33,6 @@ df$loc_big_filler <- gsub("\\.", "", df$loc_big_filler)
 df$loc_contrast = gsub("\\.","",df$loc_contrast)
 df$loc_small_filler = gsub("\\.","",df$loc_small_filler)
 df$loc_target_pic = gsub("\\.","",df$loc_target_pic)
-
-word <- word(df$instruction, -1)
-
-df = df %>%
-  mutate(item=word)
-
-#rename the clicks
-#if three entries, name them baseline, modifier, noun
-#else, baseline and noun
-
 
 df = df %>% 
   separate(response,into = c("click_prior", "click2", "click3"), sep=",")
@@ -63,31 +60,50 @@ df = df %>%
                                         feature == "big" ~ loc_big_filler,
                                         TRUE ~ "NA"))
 
+
 ### EXCLUSIONS
 
 df = df %>% 
   mutate(selection_correct = click_noun == loc_target_pic)
 
-table(df$selection_correct) # 267 incorrect responses for pilot
-view(df)
+table(df$selection_correct) # 267 incorrect responses for pilot, 3431 for main
+
 table(df$trialType)
 
 # exclude anyone with < 90% correct selections on all trials where correct selection was possible from linguistic signal
 # UPDATE THIS CODE
 
-accuracy = df %>% 
-  filter(trialType == "test") %>% 
-  group_by(workerid) %>% 
-  tally(selection_correct) %>% 
-  mutate(correct=n/40) #40 test trials total
+# accuracy <- df %>%
+#   filter(trialType == "test") %>%
+#   group_by(workerid, pragContext) %>%
+#   tally(selection_correct) %>%
+#   mutate(correct=n/40) #40 test trials total
 
-View(accuracy %>% arrange(n))
+# NOTE: This take on "accuracy" differs from the above in that "correct" reflects
+# the percent of all correct selections where correct selection was possible from linguistic signal.
+# The "accuracy" commented out above counts only test trials in calculating "correct" 
+bad_accuracy <- df %>%
+  subset(df$pragContext == "bad") %>%
+  subset(cond != 'contrast_control' & cond != 'semantic_control') %>%
+  subset(!(cond =='no_contrast' & trialType == "train"))  %>% #removes train
+  group_by(workerid,pragContext) %>%
+  tally(selection_correct) %>%
+  mutate(correct=n/140)
+   
+good_accuracy <- df %>%
+  subset(df$pragContext == "good") %>%
+  group_by(workerid,pragContext) %>%
+  tally(selection_correct) %>%
+  mutate(correct=n/300)
 
-toexclude = accuracy %>% 
-  filter(correct < .95)
+accuracy <- rbind(good_accuracy,bad_accuracy)
+View(accuracy %>% arrange(correct))
 
-length(toexclude$workerid) # exclude 1 for pilot (2 were me)
-length(toexclude$workerid)/length(accuracy$workerid) # exclude 25% of subjects for pilot
+toexclude = accuracy %>%
+  filter(correct <.9)
+
+length(toexclude$workerid) # 4 for pilot, 4 for main
+length(toexclude$workerid)/length(accuracy$workerid) #0.06349206 data loss
 
 df = df %>% 
   filter(!workerid %in% toexclude$workerid)
@@ -98,17 +114,16 @@ df = df %>%
 df = df %>% 
   filter(selection_correct==1)
 
-nrow(df) # 729 for pilot
-
+nrow(df) # 936 for pilot, 14745 for main
 
 # MAKE SURE THE ABOVE EXCLUSION CODE DOES THE RIGHT THING
 # get only experimental trials (no fillers) for further analysis
+# as a reminder we can use all trial types for testing our linking assumption
 d_test = df %>% 
   filter(trialType == "test") %>%
   droplevels()
 
 ### PART I: PLOT DATA FROM REPLICATION TASK
-
 # plot proportion of selections by condition
 toplot =  d_test %>%
   select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
@@ -117,14 +132,15 @@ toplot =  d_test %>%
                             TRUE ~ 0)) %>% 
   mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
                                 TRUE ~ 0)) %>% 
-  # CASEY: WRITE CODE LIKE IN 116-119 TO GET DISTRACTOR (CONTRAST AND OTHER FILLER SELECTIONS)
+  mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
+                            TRUE ~ 0)) %>% 
   group_by(cond,pragContext,window) %>%
-  summarize(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
-  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_competitor) %>%
-  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
-  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
+  summarize(m_target=mean(target),m_competitor=mean(competitor), m_distractor=mean(distractor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor), ci_low_distractor=ci.low(distractor),ci_high_distractor=ci.high(distractor)) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_distractor) %>%
+  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,ifelse(location=="m_distractor",ci_low_distractor,0)))) %>%
+  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,ifelse(location=="m_distractor",ci_high_distractor,0)))) %>%
   mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
-  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
+  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target", "distractor"="m_distractor")) %>%
   mutate(Region=fct_rev(Region)) %>%
   ungroup() %>% 
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
@@ -135,7 +151,88 @@ proportions = ggplot(toplot, aes(x=window, y=Mean, group=Region)) +
   geom_point(aes(color=Region),size=2.5,shape="square") +
   geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
   facet_grid(cond ~ pragContext ) + 
-  scale_color_manual(values=c("darkgreen","orange")) +
+  scale_color_manual(values=c("darkgreen","blue", "orange")) +
+  xlab("Window") +
+  ylab("Proportion of selections") +
+  theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
+
+proportions
+
+ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
+
+# recreate Fig 13 from Sun & Breheny 2020
+# compute and then plot target preference scores in each window
+toplot =  df %>%
+  filter(cond %in% c('contrast','no_contrast')) %>% 
+  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
+  pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
+  mutate(target = case_when(loc_target_pic==selection ~ 1,
+                            TRUE ~ 0)) %>% 
+  mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
+                                TRUE ~ 0)) %>% 
+  mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
+                                TRUE ~ 0)) %>%
+  # when target == 0 and comp == 0, turn target 0 into .5? or exclude? excluding for time being (leads to exclusion of 3230 data points)
+  filter(target == 1 | competitor == 1) %>% 
+  group_by(pragContext,cond,window,workerid) %>%
+  summarize(m_target=mean(target),m_competitor=mean(competitor)+.00000001) %>% 
+  ungroup() %>% 
+  mutate(prop=(m_target/m_competitor)+.00000001,targetadvantage=log(prop)) %>% 
+  group_by(pragContext,cond,window) %>%
+  summarize(target=mean(targetadvantage),ci_low_target=ci.low(targetadvantage),ci_high_target=ci.high(targetadvantage)) %>%
+  ungroup() %>% 
+  mutate(YMin=target-ci_low_target,YMax=target+ci_high_target) %>% 
+  # mutate(condition=fct_relevel(condition,"all","some"),Size=size) %>%
+  # mutate(Condition=fct_recode(Condition,"number"="num"))
+  mutate(cond=fct_relevel(cond,"contrast", "no_contrast")) %>%
+  mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
+  mutate(window = fct_relevel(window,"prior","adjective"))
+  dodge=position_dodge(0)
+
+fig13 <- ggplot(toplot, aes(x=window, y=target, color=cond, linetype=pragContext,group=interaction(cond,pragContext))) +
+  geom_line(size=1.3,position=dodge) +
+  geom_point(size=2.5,shape="square",position=dodge) +
+  geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.7,  linetype="solid",position=dodge) +
+  # facet_grid(size ~condition ) + 
+  scale_color_manual(values=c(cbPalette[2],cbPalette[6])) +
+  scale_x_discrete(breaks=c("click_prior","click_adj","click_noun"),
+                   labels=c("Prior", "Adj", "Noun")) +
+  xlab("Window") +
+  ylab("log(P(Target)/P(Competitor))") #+
+  # theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
+ggsave("../graphs/results-idt.pdf",width=4.5,height=2.5)
+fig13
+
+toplot =  d_test %>%
+  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
+  pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
+  mutate(target = case_when(loc_target_pic==selection ~ 1,
+                            TRUE ~ 0)) %>% 
+  mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
+                                TRUE ~ 0)) %>% 
+  mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
+                                TRUE ~ 0)) %>% 
+  group_by(cond,pragContext,window) %>%
+  summarize(m_target=mean(target),m_competitor=mean(competitor), m_distractor=mean(distractor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor), ci_low_distractor=ci.low(distractor),ci_high_distractor=ci.high(distractor)) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_distractor) %>%
+  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,ifelse(location=="m_distractor",ci_low_distractor,0)))) %>%
+  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,ifelse(location=="m_distractor",ci_high_distractor,0)))) %>%
+  mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
+  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target", "distractor"="m_distractor")) %>%
+  mutate(Region=fct_rev(Region)) %>%
+  ungroup() %>% 
+  mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
+  mutate(window = fct_relevel(window,"prior","adjective"))
+
+#instead of faceting by contrast and pragContext, let color=reliable/unreliable, 
+#alpha=contrast vs no_contrast. you can find their colors in their osf. don't plot distractor.
+#window on the x axis rather than time
+proportions = ggplot(toplot, aes(x=window, y=Mean, group=Region)) +
+  geom_line(aes(color=Region),size=1.3) +
+  geom_point(aes(color=Region),size=2.5,shape="square") +
+  geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
+  facet_grid(cond ~ pragContext ) + 
+  scale_color_manual(values=c("darkgreen","blue", "orange")) +
   xlab("Window") +
   ylab("Proportion of selections") +
   theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
@@ -145,75 +242,7 @@ proportions
 ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
 
 
-# CASEY: CONTINUE HERE
-# plot proportion of selections by condition and experiment half
-toplot =  df %>%
-  filter(ExpFiller=="Exp") %>%
-  select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3,trial_group) %>%
-  mutate(ID = row_number()) %>%
-  gather(click_number,location,click1:click4) %>%
-  mutate(target=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
-  mutate(competitor=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0))) %>%
-  group_by(condition,size,click_number,trial_group) %>%
-  summarize(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
-  gather(location,Mean,m_target:m_competitor) %>%
-  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
-  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
-  mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
-  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
-  mutate(Region=fct_rev(Region)) %>%
-  ungroup() %>%
-  mutate(click_number=fct_recode(click_number,prior="click1",gender="click2",determiner="click3",noun="click4"))
 
-proportions = ggplot(toplot, aes(x=click_number, y=Mean, group=Region)) +
-  geom_line(aes(color=Region),size=1.3) +
-  geom_point(aes(color=Region),size=2.5,shape="square") +
-  geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
-  facet_grid(trial_group + size ~condition ) + 
-  scale_color_manual(values=c("darkgreen","orange")) +
-  xlab("Window") +
-  ylab("Proportion of selections") +
-  theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-
-proportions
-
-ggsave(proportions, file="../graphs/proportions_order.pdf",width=9,height=9)
-
-# recreate Fig 13 from Sun & Breheny 2020
-# compute and then plot target preference scores in each window
-toplot =  df %>%
-  filter(ExpFiller=="Exp") %>%
-  select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3) %>%
-  mutate(ID = row_number()) %>%
-  gather(click_number,location,click1:click4) %>%
-  mutate(target=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
-  mutate(competitor=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0))) %>%
-  # when target == 0 and comp == 0, turn target 0 into .5? or exclude? excluding for time being (leads to exclusion of 3230 data points)
-  filter(target == 1 | competitor == 1) %>% 
-  group_by(condition,size,click_number,workerid) %>%
-  summarize(m_target=mean(target),m_competitor=mean(competitor)+.00000001) %>% 
-  ungroup() %>% 
-  mutate(prop=(m_target/m_competitor)+.00000001,targetadvantage=log(prop)) %>% 
-  group_by(condition,size,click_number) %>%
-  summarize(target=mean(targetadvantage),ci_low_target=ci.low(targetadvantage),ci_high_target=ci.high(targetadvantage)) %>%
-  ungroup() %>% 
-  mutate(YMin=target-ci_low_target,YMax=target+ci_high_target) %>% 
-  mutate(Condition=fct_relevel(condition,"all","some"),Size=size) %>%
-  mutate(Condition=fct_recode(Condition,"number"="num"))
-dodge=position_dodge(0)
-
-ggplot(toplot, aes(x=click_number, y=target, color=Condition, linetype=Size,group=interaction(Condition,Size))) +
-  geom_line(size=1.3,position=dodge) +
-  geom_point(size=2.5,shape="square",position=dodge) +
-  geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.7,  linetype="solid",position=dodge) +
-  # facet_grid(size ~condition ) + 
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_x_discrete(breaks=c("click1","click2","click3","click4"),
-                   labels=c("Baseline", "Gender", "Determiner", "Noun")) +
-  xlab("Window") +
-  ylab("log(P(Target)/P(Competitor))") #+
-  # theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/results-idt.pdf",width=4.5,height=2.5)
 
 #Leyla new plots
 toplot =  df %>%
@@ -250,6 +279,7 @@ ggsave("../graphs/results-target.pdf",width=4.5,height=2.5)
 ### PART II: PLOT CATEGORICAL DATA AGAINST EYE MOVEMENT DATA
 
 # load eye-tracking data from Sun&Breheny ---> not sure about these variables: TrialId, mean, subject, unique,TETTime, RTTime, time
+# check Rachel's emails
 baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
 gender = read.csv("sb_eyetracking/exp200ms_genderdata.csv", header = TRUE)
 determiner = read.csv("sb_eyetracking/exp200ms_determiner.csv", header = TRUE)
