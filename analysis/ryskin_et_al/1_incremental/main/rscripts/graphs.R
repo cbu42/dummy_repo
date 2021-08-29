@@ -7,10 +7,10 @@ source("helpers.R")
 setwd('../data')
 theme_set(theme_bw())
 
-view(unique(foo$workerid))
-
 # color-blind-friendly palette
 cbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") 
+# ryskin fig 2: dark purple, light purple, dark green, light green
+ryskinPalette <- c("#831CBF", "#cf97EF", "#00C19b", "#90D1C4")
 
 # df = read.csv("trials_merged.csv", header = TRUE)
 # demo = read.csv("subject_info_merged.csv", header = TRUE)
@@ -22,8 +22,9 @@ df$error <- NULL
 df$proliferate.condition <- NULL
 #remove pilot trials (unless we want to keep the non-me ones)
 `%notin%` <- Negate(`%in%`)
+#remove pilot participants
 df <- df[df$workerid %notin% c(17, 13, 16, 19, 14, 18),]
-
+length(unique(df$workerid)) #63 participants
 
 #trial numbers have to be reduced by 2
 df$trial_number <- df$trial_number-2
@@ -203,6 +204,7 @@ fig13 <- ggplot(toplot, aes(x=window, y=target, color=cond, linetype=pragContext
 ggsave("../graphs/results-idt.pdf",width=4.5,height=2.5)
 fig13
 
+#ryskin fig 2
 toplot =  d_test %>%
   select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
   pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
@@ -210,33 +212,39 @@ toplot =  d_test %>%
                             TRUE ~ 0)) %>% 
   mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
                                 TRUE ~ 0)) %>% 
-  mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
-                                TRUE ~ 0)) %>% 
+  # mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
+  #                               TRUE ~ 0)) %>% 
   group_by(cond,pragContext,window) %>%
-  summarize(m_target=mean(target),m_competitor=mean(competitor), m_distractor=mean(distractor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor), ci_low_distractor=ci.low(distractor),ci_high_distractor=ci.high(distractor)) %>%
-  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_distractor) %>%
-  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,ifelse(location=="m_distractor",ci_low_distractor,0)))) %>%
-  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,ifelse(location=="m_distractor",ci_high_distractor,0)))) %>%
+  summarize(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_competitor) %>%
+  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
+  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
   mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
-  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target", "distractor"="m_distractor")) %>%
+  #exclude distractor to better resemble ryskin fig. 2
+  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
   mutate(Region=fct_rev(Region)) %>%
   ungroup() %>% 
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
-  mutate(window = fct_relevel(window,"prior","adjective"))
+  mutate(window = fct_relevel(window,"prior","adjective")) %>% 
+  mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
+  mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) %>% 
+  mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
 
 #instead of faceting by contrast and pragContext, let color=reliable/unreliable, 
 #alpha=contrast vs no_contrast. you can find their colors in their osf. don't plot distractor.
 #window on the x axis rather than time
-proportions = ggplot(toplot, aes(x=window, y=Mean, group=Region)) +
-  geom_line(aes(color=Region),size=1.3) +
-  geom_point(aes(color=Region),size=2.5,shape="square") +
+proportions = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = sort(cond, decreasing = TRUE), group=interaction(pragContext, cond, Region))) +
+  geom_line(aes(color=pragContext, linetype= Region),size=1.3) +
+  geom_point(aes(color=pragContext),size=2.5,shape="square") +
   geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
-  facet_grid(cond ~ pragContext ) + 
-  scale_color_manual(values=c("darkgreen","blue", "orange")) +
+  labs(color="Pragmatic context", alpha = "Condition") +
+  #scale_alpha_discrete(range=c(.5,1))+
+  scale_alpha_discrete(limits = c("contrast", "no_contrast"),range=c(1,.4))+
+  #facet_grid(cond ~ pragContext ) + 
+  scale_color_manual(values=c(ryskinPalette[1], ryskinPalette[3])) +
   xlab("Window") +
   ylab("Proportion of selections") +
   theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-
 proportions
 
 ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
