@@ -35,6 +35,7 @@ df$loc_contrast = gsub("\\.","",df$loc_contrast)
 df$loc_small_filler = gsub("\\.","",df$loc_small_filler)
 df$loc_target_pic = gsub("\\.","",df$loc_target_pic)
 
+
 df = df %>% 
   separate(response,into = c("click_prior", "click2", "click3"), sep=",")
 
@@ -47,6 +48,7 @@ df$click2 <- gsub(" ", "", df$click2)
 df$click3 <- gsub("\\]", "", df$click3)
 df$click3 <- gsub("\\'", "", df$click3)
 df$click3 <- gsub(" ", "", df$click3)
+?gsub
 
 df = df %>% 
   mutate(click_noun = case_when(is.na(click3) ~ click2,
@@ -229,11 +231,7 @@ toplot =  d_test %>%
   mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
   mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) %>% 
   mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
-
-#instead of faceting by contrast and pragContext, let color=reliable/unreliable, 
-#alpha=contrast vs no_contrast. you can find their colors in their osf. don't plot distractor.
-#window on the x axis rather than time
-proportions = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = sort(cond, decreasing = TRUE), group=interaction(pragContext, cond, Region))) +
+ryskin_f2 = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = sort(cond, decreasing = TRUE), group=interaction(pragContext, cond, Region))) +
   geom_line(aes(color=pragContext, linetype= Region),size=1.3) +
   geom_point(aes(color=pragContext),size=2.5,shape="square") +
   geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
@@ -245,44 +243,61 @@ proportions = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = so
   xlab("Window") +
   ylab("Proportion of selections") +
   theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-proportions
+ryskin_f2
+ggsave(ryskin_f2, file="../graphs/ryskin_fig2_rep.pdf",width=9,height=4.5)
 
-ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
+head(d_test$response_times)
 
-
-
-
-#Leyla new plots
-toplot =  df %>%
-  filter(ExpFiller=="Exp") %>%
-  select(workerid,condition,size,click1,click2,click3,click4,target1,target2,competitor1,competitor2,instruction3) %>%
-  mutate(ID = row_number()) %>%
-  gather(click_number,location,click1:click4) %>%
-  mutate(target=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
-  mutate(competitor=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0))) %>%
-  filter(target == 1 | competitor == 1) %>% #CHANGE
-  group_by(condition,size,click_number) %>%
-  summarize(m_target=mean(target),m_competitor=mean(competitor),target_ci_low=ci.low(target),target_ci_high=ci.high(target),competitor_ci_low=ci.low(competitor),competitor_ci_high=ci.high(competitor)) %>% 
+# Does the bad pragContext make us increasingly less likely to draw a contrastive inference?
+# Subset to Adjective window bc that's where contrast effect shows up. 
+# Plot contrast v no contrast and bad s good just in the adj window. X axis is trial number (over time analysis)
+toplot =  d_test %>%
+  select(workerid,response_times, pragContext,cond,click_adj,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number) %>%  
+  mutate(selection = click_adj) %>% 
+  mutate(response_adj = str_extract(response_times, '\\s(.*?),')) %>% 
+  mutate(response_adj = as.integer(gsub('\\s|,', "", response_adj))) %>% 
+  mutate(target = case_when(loc_target_pic==selection ~ 1,
+                            TRUE ~ 0)) %>% 
+  mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
+                                TRUE ~ 0)) %>%
+  group_by(cond,pragContext, trial_number) %>%
+  mutate(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_competitor) %>%
+  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
+  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
+  mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
+  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
+  mutate(Region=fct_rev(Region)) %>%
   ungroup() %>% 
-  mutate(YMin=m_target-target_ci_low,YMax=m_target+target_ci_high) %>% 
-  #mutate(YMin=m_competitor-competitor_ci_low,YMax=m_competitor+competitor_ci_high) %>% 
-  mutate(Condition=fct_relevel(condition,"all","some"),Size=size) %>%
-  mutate(Condition=fct_recode(Condition,"number"="num"))
-dodge=position_dodge(0)
+  mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
+  mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) #%>% 
+  #mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
+view(toplot)
+over_time = ggplot(toplot, aes(x=trial_number, y=response_adj, color=pragContext, linetype=cond, group=interaction(pragContext, cond))) +
+  #geom_line(aes(color=pragContext, linetype= cond),size=1.3) +
+  geom_smooth(method='lm')+
+  labs(color="Pragmatic context", linetype = "Condition") +
+  #scale_alpha_discrete(range=c(.5,1))+
+  #facet_grid(cond ~ pragContext ) + 
+  scale_color_manual(values=c(ryskinPalette[1], ryskinPalette[3])) +
+  xlab("Trial number (sequentially)") +
+  ylab("Reaction time (ms)") +
+  theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
+over_time
+ggsave(over_time, file="../graphs/response-over_time.pdf",width=9,height=4.5)
 
-ggplot(toplot, aes(x=click_number, y=m_target, color=Condition, linetype=Size,group=interaction(Condition,Size))) +
-  geom_line(size=1.3,position=dodge) +
-  geom_point(size=2.5,shape="square",position=dodge) +
-  geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.7,  linetype="solid",position=dodge) +
-  # facet_grid(size ~condition ) + 
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_x_discrete(breaks=c("click1","click2","click3","click4"),
-                   labels=c("baseline", "gender", "determiner", "noun")) +
-  xlab("Window") +
-  ylab("Proportion of target selections") #+
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/results-target.pdf",width=4.5,height=2.5)
-
+contrastive_inf = ggplot(toplot, aes(x=trial_number, y=target, color=pragContext, linetype=cond, group=interaction(pragContext, cond))) +
+  geom_smooth(method='lm')+
+  labs(color="Pragmatic context", linetype = "Condition") +
+  #scale_alpha_discrete(range=c(.33,.5,1))+
+  #facet_grid(cond ~ pragContext ) + 
+  scale_color_manual(values=c(ryskinPalette[1], ryskinPalette[3])) +
+  xlab("Trial number (sequentially)") +
+  ylab("Proportion of selections") +
+  labs(title = "Target selections during adjective window") +
+  theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
+contrastive_inf
+ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,height=4.5)
 
 ### PART II: PLOT CATEGORICAL DATA AGAINST EYE MOVEMENT DATA
 
