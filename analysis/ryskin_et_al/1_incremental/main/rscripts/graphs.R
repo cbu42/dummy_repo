@@ -1,10 +1,12 @@
 library(tidyverse)
 library(lme4)
 library(stringr)
+library(stringi)
+library(lmerTest)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("helpers.R")
-setwd('../data')
+#setwd('../data')
 theme_set(theme_bw())
 
 # color-blind-friendly palette
@@ -20,7 +22,6 @@ demo = read.csv("ryskin-subject_information.csv", header = TRUE)
 #remove error column
 df$error <- NULL
 df$proliferate.condition <- NULL
-#remove pilot trials (unless we want to keep the non-me ones)
 `%notin%` <- Negate(`%in%`)
 #remove pilot participants
 df <- df[df$workerid %notin% c(17, 13, 16, 19, 14, 18),]
@@ -92,7 +93,7 @@ bad_accuracy <- df %>%
   group_by(workerid,pragContext) %>%
   tally(selection_correct) %>%
   mutate(correct=n/140)
-   
+
 good_accuracy <- df %>%
   subset(df$pragContext == "good") %>%
   group_by(workerid,pragContext) %>%
@@ -136,7 +137,7 @@ toplot =  d_test %>%
   mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
                                 TRUE ~ 0)) %>% 
   mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
-                            TRUE ~ 0)) %>% 
+                                TRUE ~ 0)) %>% 
   group_by(cond,pragContext,window) %>%
   summarize(m_target=mean(target),m_competitor=mean(competitor), m_distractor=mean(distractor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor), ci_low_distractor=ci.low(distractor),ci_high_distractor=ci.high(distractor)) %>%
   pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_distractor) %>%
@@ -160,11 +161,9 @@ proportions = ggplot(toplot, aes(x=window, y=Mean, group=Region)) +
   theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
 
 proportions
-
 ggsave(proportions, file="../graphs/proportions.pdf",width=9,height=4.5)
 
 # recreate Fig 13 from Sun & Breheny 2020
-# compute and then plot target preference scores in each window
 toplot =  df %>%
   filter(cond %in% c('contrast','no_contrast')) %>% 
   select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
@@ -185,12 +184,10 @@ toplot =  df %>%
   summarize(target=mean(targetadvantage),ci_low_target=ci.low(targetadvantage),ci_high_target=ci.high(targetadvantage)) %>%
   ungroup() %>% 
   mutate(YMin=target-ci_low_target,YMax=target+ci_high_target) %>% 
-  # mutate(condition=fct_relevel(condition,"all","some"),Size=size) %>%
-  # mutate(Condition=fct_recode(Condition,"number"="num"))
   mutate(cond=fct_relevel(cond,"contrast", "no_contrast")) %>%
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
   mutate(window = fct_relevel(window,"prior","adjective"))
-  dodge=position_dodge(0)
+dodge=position_dodge(0)
 
 fig13 <- ggplot(toplot, aes(x=window, y=target, color=cond, linetype=pragContext,group=interaction(cond,pragContext))) +
   geom_line(size=1.3,position=dodge) +
@@ -202,11 +199,12 @@ fig13 <- ggplot(toplot, aes(x=window, y=target, color=cond, linetype=pragContext
                    labels=c("Prior", "Adj", "Noun")) +
   xlab("Window") +
   ylab("log(P(Target)/P(Competitor))") #+
-  # theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/results-idt.pdf",width=4.5,height=2.5)
+# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
 fig13
+ggsave("../graphs/results-idt.pdf",width=4.5,height=2.5)
 
 #ryskin fig 2
+#line type as contrast? and alpha as target/competitor?
 toplot =  d_test %>%
   select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
   pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
@@ -231,13 +229,16 @@ toplot =  d_test %>%
   mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
   mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) %>% 
   mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
-ryskin_f2 = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = sort(cond, decreasing = TRUE), group=interaction(pragContext, cond, Region))) +
-  geom_line(aes(color=pragContext, linetype= Region),size=1.3) +
+
+#reverse dark and light
+#consider switching contrast and no contrast positions/roles
+ryskin_f2 = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = Region, group=interaction(pragContext, cond, Region))) +
+  geom_line(aes(color=pragContext, linetype= cond),size=1.3) +
   geom_point(aes(color=pragContext),size=2.5,shape="square") +
   geom_errorbar(aes(ymin=YMin, ymax=YMax), width=.2, alpha=.3) +
-  labs(color="Pragmatic context", alpha = "Condition") +
+  labs(color="Pragmatic context", alpha = "Region") +
   #scale_alpha_discrete(range=c(.5,1))+
-  scale_alpha_discrete(limits = c("contrast", "no_contrast"),range=c(1,.4))+
+  scale_alpha_discrete(limits = c("target", "competitor"),range=c(1,.3))+
   #facet_grid(cond ~ pragContext ) + 
   scale_color_manual(values=c(ryskinPalette[1], ryskinPalette[3])) +
   xlab("Window") +
@@ -246,11 +247,10 @@ ryskin_f2 = ggplot(toplot, aes(x=window, y=Mean, color=pragContext, alpha = sort
 ryskin_f2
 ggsave(ryskin_f2, file="../graphs/ryskin_fig2_rep.pdf",width=9,height=4.5)
 
-head(d_test$response_times)
-
 # Does the bad pragContext make us increasingly less likely to draw a contrastive inference?
 # Subset to Adjective window bc that's where contrast effect shows up. 
 # Plot contrast v no contrast and bad s good just in the adj window. X axis is trial number (over time analysis)
+#defunct
 toplot =  d_test %>%
   select(workerid,response_times, pragContext,cond,click_adj,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number) %>%  
   mutate(selection = click_adj) %>% 
@@ -271,7 +271,7 @@ toplot =  d_test %>%
   ungroup() %>% 
   mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
   mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) #%>% 
-  #mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
+#mutate(cond = fct_relevel(cond,"no_contrast","contrast"))
 view(toplot)
 over_time = ggplot(toplot, aes(x=trial_number, y=response_adj, color=pragContext, linetype=cond, group=interaction(pragContext, cond))) +
   #geom_line(aes(color=pragContext, linetype= cond),size=1.3) +
@@ -286,8 +286,75 @@ over_time = ggplot(toplot, aes(x=trial_number, y=response_adj, color=pragContext
 over_time
 ggsave(over_time, file="../graphs/response-over_time.pdf",width=9,height=4.5)
 
-contrastive_inf = ggplot(toplot, aes(x=trial_number, y=target, color=pragContext, linetype=cond, group=interaction(pragContext, cond))) +
+toplot_target <- toplot %>% 
+  filter(Region=='target')
+contrastive_inf = ggplot(toplot_target, aes(x=trial_number, y=Mean, color=pragContext, linetype=cond, shape = cond, group=interaction(pragContext, cond))) +
   geom_smooth(method='lm')+
+  geom_point() +
+  labs(color="Pragmatic context", linetype = "Condition") +
+  #scale_alpha_discrete(range=c(.33,.5,1))+
+  #facet_grid(cond ~ pragContext ) + 
+  scale_color_manual(values=c(ryskinPalette[1], ryskinPalette[3])) +
+  xlab("Trial number (sequentially)") +
+  ylab("Proportion of selections") +
+  labs(title = "Target selections during adjective window") +
+  theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
+contrastive_inf
+ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,height=4.5)
+
+# create a binary variable: TRUE if participant has seen filler trial before test trials?
+# create a continuous var: how many filler trials have they seen before the first test trial?
+# then, recreate the above plot with those ^^ vars as an additional variable. facet the plot using the above. 
+d_test2 = df %>% 
+  filter(trialType != "train") %>%
+  droplevels()
+toplot_trialType =  d_test2 %>%
+  select(workerid,response_times, pragContext,cond,click_adj,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number, trialType) %>%  
+  mutate(selection = click_adj) %>% 
+  mutate(response_adj = str_extract(response_times, '\\s(.*?),')) %>% 
+  mutate(response_adj = as.integer(gsub('\\s|,', "", response_adj))) %>% 
+  mutate(target = case_when(loc_target_pic==selection ~ 1,
+                            TRUE ~ 0)) %>% 
+  mutate(competitor = case_when(loc_competitor_pic==selection ~ 1,
+                                TRUE ~ 0)) %>%
+  group_by(cond,pragContext, trial_number) %>%
+  mutate(m_target=mean(target),m_competitor=mean(competitor),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor)) %>%
+  pivot_longer(names_to="location",values_to="Mean",cols=m_target:m_competitor) %>%
+  mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
+  mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
+  mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
+  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target")) %>%
+  mutate(Region=fct_rev(Region)) %>%
+  ungroup() %>% 
+  mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
+  mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable"))
+
+#group_by: workerid
+#df_f: filter for fillers
+
+
+#df_t: filter for tests
+
+
+names(toplot_target)
+table(toplot_trialType$trialType)
+
+# TODO: filler boolean vars
+# toplot_trialType$filler_first = NA # creates a new variable filled with NAs
+# ind_f <- d_test2 %>% 
+#   group_by(workerid) %>% 
+#   filter(trialType=='filler') %>% 
+#   min(trial_number)
+ind  <-  toplot_trialType$trial_number = 1 & toplot_trialType$trialType == 'filler'
+toplot_trialType$filler_first[ind] = v1
+
+
+
+
+view(toplot_target)
+contrastive_inf = ggplot(toplot_target, aes(x=trial_number, y=Mean, color=pragContext, linetype=cond, shape = cond, group=interaction(pragContext, cond))) +
+  geom_smooth(method='lm')+
+  geom_point() +
   labs(color="Pragmatic context", linetype = "Condition") +
   #scale_alpha_discrete(range=c(.33,.5,1))+
   #facet_grid(cond ~ pragContext ) + 
@@ -301,14 +368,356 @@ ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,h
 
 ### PART II: PLOT CATEGORICAL DATA AGAINST EYE MOVEMENT DATA
 
-# load eye-tracking data from Sun&Breheny ---> not sure about these variables: TrialId, mean, subject, unique,TETTime, RTTime, time
-# check Rachel's emails
-baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
-gender = read.csv("sb_eyetracking/exp200ms_genderdata.csv", header = TRUE)
-determiner = read.csv("sb_eyetracking/exp200ms_determiner.csv", header = TRUE)
-name = read.csv("sb_eyetracking/exp200ms_namedata.csv", header = TRUE)
-end = read.csv("sb_eyetracking/exp200ms_enddata.csv", header = TRUE)
-preview = read.csv("sb_eyetracking/exp200ms_previewdata.csv", header = TRUE)
+# Begin: Ryskin script
+## Experiment 2 
+
+### E2 GLMM: Adj + Noun 
+
+
+#github lfs (revert to a previous version of the repo (don't push large files!))
+#r expt2 reading in adj+noun window data for glmm
+pragtrain3_data = read_tsv('../data/ryskin_eyetracking/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    trial_type = case_when(
+      trialType == 1 ~ 'test',
+      trialType == 99 ~ 'train',
+      trialType == 999 ~ 'filler'),
+    uniqueID = str_c('l',as.character(list),'_',trial_type,trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    timebin_rel = timebin/10 - 17)
+
+pragtrain3_list1 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_1.txt')
+pragtrain3_list2 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_2.txt')
+pragtrain3_lists = bind_rows(pragtrain3_list1,pragtrain3_list2) %>% 
+  mutate(unique_ID = str_c(as.character(counterbalance),'_',trialID))
+pragtrain3_data = pragtrain3_data %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+#rm(pragtrain3_list1, pragtrain3_list2, pragtrain3_lists)
+
+pragtrain3_crit = pragtrain3_data %>% 
+  group_by(subject,trialnum) %>% 
+  mutate(target_AR1_corrected = lag(target_fix),
+         compet_AR1_corrected = lag(compet_fix)) %>% 
+  filter(trial_type == 'test'& target_AR1 != 999) %>% 
+  ungroup()
+
+# expt2 setting up factors and contrasts
+pragtrain3_crit$timebin_rel_c = scale(pragtrain3_crit$timebin_rel,scale=F, center = T)
+pragtrain3_crit$prag_context_cond = factor(pragtrain3_crit$prag_context_cond)
+pragtrain3_crit$contrast_cond = factor(pragtrain3_crit$contrast_cond)
+
+contrasts(pragtrain3_crit$prag_context_cond)<-c(-0.5,0.5)
+contrasts(pragtrain3_crit$contrast_cond)<-c(0.5,-0.5)
+
+contrasts(pragtrain3_crit$prag_context_cond)
+contrasts(pragtrain3_crit$contrast_cond)
+
+# expt2 adj+noun glmm
+m_pragtrain3_adjnoun_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond + target_AR1_corrected + 
+                                    (1+contrast_cond|subject)+(1+prag_context_cond|audio),
+                                  data = pragtrain3_crit ,
+                                  family = binomial(link = 'logit'),
+                                  glmerControl(optimizer = 'bobyqa',
+                                               optCtrl=list(maxfun=2e5)))
+
+summary(m_pragtrain3_adjnoun_glmm)
+#contrast_cond1:prag... the neg estimate means the effect of contrast is smaller for unreliable speakers compared to reliable condition
+exp
+#TODO: look at adj window as well!
+#needed: df where each row corresponds to combination a time window to a particular region in particular condition
+#outcome var is proportion of selections
+summary(pragtrain3_crit$target_fix)
+view(pragtrain3_crit[1:50,])
+#1/0: viewing target or not in 10 ms bins
+table(pragtrain3_crit$target_fix)
+table(pragtrain3_crit$compet_fix)
+names(pragtrain3_crit)
+
+summary(pragtrain3_crit$target_AR1_corrected)
+# if the paper makes mention nof target_AR1_corrected - it might encode what the participants' previous fixation was
+# curr usually predicted by previous fixation
+table(pragtrain3_crit$target_AR1_corrected)
+
+### E2 GLMM Adj + Noun by experiment halves
+
+# expt2 adding half contrasts
+pragtrain3_crit2 = pragtrain3_crit %>% 
+  mutate(half= if_else(trialnum<151,"first","second"))
+
+pragtrain3_crit2$trialorder_c = scale(pragtrain3_crit2$trialnum,scale=F,center=T)
+pragtrain3_crit2$half<-factor(pragtrain3_crit2$half)
+contrasts(pragtrain3_crit2$half)<-c(-0.5,0.5)
+contrasts(pragtrain3_crit2$half)
+# expt2 adjnoun glmm by halves
+m_pragtrain3_adjnoun_glmm.halves.3 = glmer(
+  target_fix ~ contrast_cond*prag_context_cond*half + target_AR1_corrected + (1+contrast_cond|subject)+(1+prag_context_cond|audio),
+  data = pragtrain3_crit2 ,
+  family = binomial(link = 'logit'),
+  glmerControl(optimizer = 'bobyqa',
+               optCtrl=list(maxfun=2e5)))
+
+summary(m_pragtrain3_adjnoun_glmm.halves.3)
+
+### E2 GLMM Adj + Noun by trial order 
+
+# expt2 adjnoun glmm by trialorder
+m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_c + target_AR1_c ,
+                                       data = pragtrain3_crit2 )
+
+summary(m_pragtrain3_adjnoun_glmm.order3)
+
+### E2 GLMM: Adj window
+
+# expt2 adj glmm
+m_pragtrain3_adj_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond + target_AR1_corrected +                              (1+contrast_cond+target_AR1_corrected|subject)+(1+contrast_cond+target_AR1_corrected|audio),
+                              data = pragtrain3_crit %>% filter(timebin <= 830),
+                              family = binomial(link = 'logit'),
+                              glmerControl(optimizer = 'bobyqa',
+                                           optCtrl=list(maxfun=2e5)))
+
+summary(m_pragtrain3_adj_glmm)
+
+### E2 GLMM: Noun window
+
+
+#TODO
+#give Judith noun_for_GLMM and 
+
+# expt2 reading in noun window data for GLMM
+pragtrain3_noun_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_noun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>%
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    trial_type = case_when(
+      trialType == 1 ~ 'test',
+      trialType == 99 ~ 'train',
+      trialType == 999 ~ 'filler'),
+    uniqueID = str_c('l',as.character(list),'_',trial_type,trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    timebin_rel = timebin/10 - 17)
+
+pragtrain3_noun_data = pragtrain3_noun_data %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+
+pragtrain3_noun_crit = pragtrain3_noun_data %>% 
+  group_by(subject,trialnum) %>% 
+  mutate(target_AR1_corrected = lag(target_fix),
+         compet_AR1_corrected = lag(compet_fix)) %>% 
+  filter(trial_type == 'test'& target_AR1 != 999) %>% 
+  ungroup()
+
+# expt2 noun window setting up factors and contrasts
+pragtrain3_noun_crit$timebin_rel_c = scale(pragtrain3_noun_crit$timebin_rel,scale=F, center = T)
+pragtrain3_noun_crit$prag_context_cond = factor(pragtrain3_noun_crit$prag_context_cond)
+pragtrain3_noun_crit$contrast_cond = factor(pragtrain3_noun_crit$contrast_cond)
+contrasts(pragtrain3_noun_crit$prag_context_cond)<-c(-0.5,0.5)
+contrasts(pragtrain3_noun_crit$contrast_cond)<-c(0.5,-0.5)
+
+contrasts(pragtrain3_noun_crit$prag_context_cond)
+contrasts(pragtrain3_noun_crit$contrast_cond)
+
+# expt2 noun window glmm 
+m_pragtrain3_noun_glmm.1 = glmer(target_fix ~ contrast_cond*prag_context_cond + target_AR1_corrected + 
+                                   (1+target_AR1_corrected|subject)+(1+contrast_cond+target_AR1_corrected|audio),
+                                 data = pragtrain3_noun_crit,
+                                 family = binomial(link = 'logit'),
+                                 glmerControl(optimizer = 'bobyqa',
+                                              optCtrl=list(maxfun=2e5)))
+
+summary(m_pragtrain3_noun_glmm.1)
+
+### E2 Average proportions: Adj+ Noun window
+
+# expt2 reading in adj+noun window data for target proportion
+pragtrain3_adjnoun_tarprop_data = read_tsv('expt2/PragTrain3_adjnoun_window_for_tardur_tarDURdatastruct.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','order','item','targ_loc','condWith','condBet','test','subject')) %>% # item = [list,trialID]; keep = 1 if trialType == 'test', 0 otherwise
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    list = str_c('l',stri_sub(item,1,1)),
+    trialID = if_else(test == 1,str_c('test',stri_sub(item,2,-1)),'other'),
+    uniqueID = str_c(list,'_',trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    target_adv = target_prop - compet_prop,
+    elog_target_prop = log((target_prop+.5)/(1-target_prop+.5)))
+
+pragtrain3_adjnoun_tarprop_data = pragtrain3_adjnoun_tarprop_data %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+
+pragtrain3_adjnoun_tarprop_crit = pragtrain3_adjnoun_tarprop_data %>% 
+  filter(test == 1) 
+
+# expt2 adjnoun tarprop making factors and contrasts
+pragtrain3_adjnoun_tarprop_crit$prag_context_cond  = factor(pragtrain3_adjnoun_tarprop_crit$prag_context_cond)
+pragtrain3_adjnoun_tarprop_crit$contrast_cond = factor(pragtrain3_adjnoun_tarprop_crit$contrast_cond)
+
+contrasts(pragtrain3_adjnoun_tarprop_crit$prag_context_cond)<-c(-0.5,0.5)
+contrasts(pragtrain3_adjnoun_tarprop_crit$contrast_cond)<-c(0.5,-0.5)
+
+contrasts(pragtrain3_adjnoun_tarprop_crit$prag_context_cond)
+contrasts(pragtrain3_adjnoun_tarprop_crit$contrast_cond)
+
+# expt2 model adjnoun tarprop
+pt3_model_adjnoun_tarprop.2 = lmer(elog_target_prop ~ prag_context_cond*contrast_cond + (1+contrast_cond|subject)+ (1+prag_context_cond |audio), data=pragtrain3_adjnoun_tarprop_crit)
+
+summary(pt3_model_adjnoun_tarprop.2)
+
+# expt2 model adjnoun tarprop follow-up
+pragtrain3_adjnoun_tarprop_crit$prag_context_cond<-relevel(pragtrain3_adjnoun_tarprop_crit$prag_context_cond, ref="reliable")
+
+pt3_model_adjnoun_tarprop.2.b = lmer(elog_target_prop ~ prag_context_cond*contrast_cond + (1+contrast_cond|subject)+ (1+prag_context_cond |audio), data=pragtrain3_adjnoun_tarprop_crit)
+
+summary(pt3_model_adjnoun_tarprop.2.b)
+
+### E2 Average Proportions Adj + Noun by experiment halves
+
+# expt2 adding half contrasts to tarprop
+pragtrain3_adjnoun_tarprop_crit2 = pragtrain3_adjnoun_tarprop_crit %>% 
+  mutate(half= if_else(order<151,"first","second"))
+
+pragtrain3_adjnoun_tarprop_crit2$trialorder_c = scale(pragtrain3_adjnoun_tarprop_crit2$order,scale=F,center=T)
+pragtrain3_adjnoun_tarprop_crit2$half<-factor(pragtrain3_adjnoun_tarprop_crit2$half)
+contrasts(pragtrain3_adjnoun_tarprop_crit2$half)<-c(-0.5,0.5)
+contrasts(pragtrain3_adjnoun_tarprop_crit2$half)
+
+# expt2 model adjnoun tarprop by half
+pt3_model_adjnoun_tarprop.half2 = lmer(elog_target_prop ~ prag_context_cond*contrast_cond*half + (1+contrast_cond+half|subject)+ (1+prag_context_cond*half |audio), data=pragtrain3_adjnoun_tarprop_crit2)
+
+summary(pt3_model_adjnoun_tarprop.half2)
+
+### E2 Average Proportions Adj + Noun by trial order
+
+# expt2 model adjnoun tarprop by order
+pt3_model_adjnoun_tarprop.order4 = lmer(elog_target_prop ~ prag_context_cond*contrast_cond*trialorder_c + (1+contrast_cond|subject)+ (1+prag_context_cond |audio), data=pragtrain3_adjnoun_tarprop_crit2,control = lmerControl(optCtrl = list(maxfun=2e5)))
+
+summary(pt3_model_adjnoun_tarprop.order4)
+
+### E2 Average proportions: Adj window
+
+# expt2 reading in adj window data for target proportion
+pragtrain3_adj_tarprop_data = read_tsv('expt2/PragTrain3_adj_window_for_tardur_tarDURdatastruct.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','order','item','targ_loc','condWith','condBet','test','subject')) %>% # item = [list,trialID]; keep = 1 if trialType == 'test', 0 otherwise
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    list = str_c('l',stri_sub(item,1,1)),
+    trialID = if_else(test == 1,str_c('test',stri_sub(item,2,-1)),'other'),
+    uniqueID = str_c(list,'_',trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    target_adv = target_prop - compet_prop,
+    elog_target_prop = log((target_prop+.5)/(1-target_prop+.5)))
+
+pragtrain3_adj_tarprop_data = pragtrain3_adj_tarprop_data %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+
+pragtrain3_adj_tarprop_crit = pragtrain3_adj_tarprop_data %>% 
+  filter(test == 1) 
+
+# expt2 adj tarprop making factors and contrasts
+pragtrain3_adj_tarprop_crit$prag_context_cond  = factor(pragtrain3_adj_tarprop_crit$prag_context_cond)
+pragtrain3_adj_tarprop_crit$contrast_cond = factor(pragtrain3_adj_tarprop_crit$contrast_cond)
+
+contrasts(pragtrain3_adj_tarprop_crit$prag_context_cond)<-c(-0.5,0.5)
+contrasts(pragtrain3_adj_tarprop_crit$contrast_cond)<-c(0.5,-0.5)
+
+contrasts(pragtrain3_adj_tarprop_crit$prag_context_cond)
+contrasts(pragtrain3_adj_tarprop_crit$contrast_cond)
+
+#r expt2 model adj tarprop
+pt3_model_adj_tarprop.2 = lmer(elog_target_prop ~ prag_context_cond*contrast_cond + (1|subject)+ (1 |audio), data=pragtrain3_adj_tarprop_crit)
+
+summary(pt3_model_adj_tarprop.2)
+
+### E2 Average proportions: Noun window 
+
+# expt2 reading in noun window data for target proportion 
+pragtrain3_noun_tarprop_data = read_tsv('expt2/PragTrain3_noun_window_for_tardur_tarDURdatastruct.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','order','item','targ_loc','condWith','condBet','test','subject')) %>% # item = [list,trialID]; keep = 1 if trialType == 'test', 0 otherwise
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    list = str_c('l',stri_sub(item,1,1)),
+    trialID = if_else(test == 1,str_c('test',stri_sub(item,2,-1)),'other'),
+    uniqueID = str_c(list,'_',trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    target_adv = target_prop - compet_prop,
+    elog_target_prop = log((target_prop+.5)/(1-target_prop+.5)))
+
+pragtrain3_noun_tarprop_data = pragtrain3_noun_tarprop_data %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+
+pragtrain3_noun_tarprop_crit = pragtrain3_noun_tarprop_data %>% 
+  filter(test == 1) 
+
+# expt2 noun tarprop making factors and contrasts
+pragtrain3_noun_tarprop_crit$prag_context_cond  = factor(pragtrain3_noun_tarprop_crit$prag_context_cond)
+pragtrain3_noun_tarprop_crit$contrast_cond = factor(pragtrain3_noun_tarprop_crit$contrast_cond)
+
+contrasts(pragtrain3_noun_tarprop_crit$prag_context_cond)<-c(-0.5,0.5)
+contrasts(pragtrain3_noun_tarprop_crit$contrast_cond)<-c(0.5,-0.5)
+
+contrasts(pragtrain3_noun_tarprop_crit$prag_context_cond)
+contrasts(pragtrain3_noun_tarprop_crit$contrast_cond)
+
+# expt2 model noun tarprop
+pt3_model_noun_tarprop.0 = lmer(elog_target_prop ~ prag_context_cond*contrast_cond + (1+contrast_cond|subject)+ (1+ prag_context_cond |audio), data=pragtrain3_noun_tarprop_crit)
+
+summary(pt3_model_noun_tarprop.0)
+
+# End: Ryskin script
+
+
+# load eye-tracking data from Ryskin 2019
+# adj_tar <- read.delim("ryskin_eyetracking/PragTrain3_adj_window_for_tardur_tarDURdatastruct.txt")
+# adjn_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt")
+# adjn_tar <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_window_for_tardur_tarDURdatastruct.txt")
+# noun_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_noun_for_GLMM_timesummLongForm.txt")
+# noun_tar <- read.delim("ryskin_eyetracking/PragTrain3_noun_window_for_tardur_tarDURdatastruct.txt")
+# baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
 
 # order should be: baseline / gender / determiner + name / noun ---> will ignore  "preview" since there's no corresponding window in the incremental decision experiment
 
@@ -370,6 +779,7 @@ toplot = longer_looks %>%
   mutate(Region=fct_relevel(Region,"target","competitor"),window=fct_relevel(window,"baseline","gender")) %>% 
   droplevels()
 
+#selections on x axis, corresponding eye movements on y axis
 # overall correlation between eye movement and decision task data
 cor.test(toplot$prop_looks,toplot$prop_selections) # .87
 
@@ -804,7 +1214,7 @@ ggsave("../graphs/proportions_condsize_target.pdf",width=5,height=3)
 tomodel = g %>%
   select(Prime,Subject,item,condition,determiner,size,time,targetlook,competitorlook,whichword) %>%
   filter(targetlook == 1 | competitorlook == 1) 
-  
+
 determiner_window = tomodel %>%
   filter(whichword=="determiner") %>%
   mutate(targetlook=as.factor(targetlook),size=as.factor(size),time=as.factor(time)) %>%
