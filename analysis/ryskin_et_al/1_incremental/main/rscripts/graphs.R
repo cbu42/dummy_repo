@@ -342,7 +342,7 @@ table(toplot_trialType$trialType)
 # TODO: filler boolean vars
 # toplot_trialType$filler_first = NA # creates a new variable filled with NAs
 # ind_f <- d_test2 %>% 
-#   group_by(workerid) %>% 
+#   ???group_by(workerid) %>% 
 #   filter(trialType=='filler') %>% 
 #   min(trial_number)
 ind  <-  toplot_trialType$trial_number = 1 & toplot_trialType$trialType == 'filler'
@@ -373,10 +373,9 @@ ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,h
 
 ### E2 GLMM: Adj + Noun 
 
-
-#github lfs (revert to a previous version of the repo (don't push large files!))
-#r expt2 reading in adj+noun window data for glmm
-pragtrain3_data = read_tsv('../data/ryskin_eyetracking/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
+# expt2 reading in adj+noun window data for glmm
+# reads in a large file - can be downloaded locally from Ryskin 2019's OSF page
+pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
   mutate(contrast_cond = case_when(
     condWith == 0 ~ 'filler', 
     condWith == 1 ~ 'no_contrast',
@@ -431,22 +430,22 @@ m_pragtrain3_adjnoun_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond +
                                   glmerControl(optimizer = 'bobyqa',
                                                optCtrl=list(maxfun=2e5)))
 
+#corresponds to table 4 on page 18 of ryskin et al.
 summary(m_pragtrain3_adjnoun_glmm)
 #contrast_cond1:prag... the neg estimate means the effect of contrast is smaller for unreliable speakers compared to reliable condition
-exp
 #TODO: look at adj window as well!
-#needed: df where each row corresponds to combination a time window to a particular region in particular condition
+#needed: df where each row corresponds to combination of time window to a particular region in particular condition
 #outcome var is proportion of selections
+#change_cb
 summary(pragtrain3_crit$target_fix)
 view(pragtrain3_crit[1:50,])
-#1/0: viewing target or not in 10 ms bins
 table(pragtrain3_crit$target_fix)
 table(pragtrain3_crit$compet_fix)
 names(pragtrain3_crit)
+#1/0: viewing target or not in 10 ms bins
 
-summary(pragtrain3_crit$target_AR1_corrected)
-# if the paper makes mention nof target_AR1_corrected - it might encode what the participants' previous fixation was
-# curr usually predicted by previous fixation
+# see if the paper makes mention of target_AR1_corrected - it might encode what the participants' previous fixation was
+# note to self about fixations: curr usually predicted by previous fixation
 table(pragtrain3_crit$target_AR1_corrected)
 
 ### E2 GLMM Adj + Noun by experiment halves
@@ -472,9 +471,16 @@ summary(m_pragtrain3_adjnoun_glmm.halves.3)
 ### E2 GLMM Adj + Noun by trial order 
 
 # expt2 adjnoun glmm by trialorder
-m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_c + target_AR1_c ,
+names(pragtrain3_crit2)
+names(pragtrain3_crit)
+
+#change_cb: parameter target_AR1_c from original does not exist
+m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_corrected + target_AR1_c ,
                                        data = pragtrain3_crit2 )
 
+#original
+# m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_c + target_AR1_c ,
+#                                        data = pragtrain3_crit2 )
 summary(m_pragtrain3_adjnoun_glmm.order3)
 
 ### E2 GLMM: Adj window
@@ -490,9 +496,6 @@ summary(m_pragtrain3_adj_glmm)
 
 ### E2 GLMM: Noun window
 
-
-#TODO
-#give Judith noun_for_GLMM and 
 
 # expt2 reading in noun window data for GLMM
 pragtrain3_noun_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_noun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>%
