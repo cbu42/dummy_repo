@@ -63,7 +63,7 @@ df = df %>%
 
 view(df[1:50,])
 names(df)
-?gather
+
 
 # run 2 models: 
 # 1. like Sun & Breheny, fit linear models individually to each time window: "We constructed separate linear mixed- effects models for each time window predicting target preference scores from fixed effects of Determiner (all, some or number), Target size (small or big), Time and their interactions, including maximal random effects structure supported by the data." -- TODO
@@ -71,7 +71,8 @@ names(df)
 
 # get just experimental trials and wrangle data
 dmodel =  df %>%
-  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction) %>%
+  filter(trialType == "test") %>% 
+  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,noun) %>%
   pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
   mutate(target = case_when(loc_target_pic==selection ~ 1,
                             TRUE ~ 0)) %>% 
@@ -80,15 +81,19 @@ dmodel =  df %>%
   mutate(distractor = case_when(loc_target_pic!=selection & loc_competitor_pic !=selection ~ 1,
                                 TRUE ~ 0)) %>% 
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
-  mutate(window = fct_relevel(window,"prior","adjective"))
+  mutate(window = fct_relevel(window,"prior","adjective")) %>% 
+  droplevels()
 
 
 # condition dataset on just target and competitor clicks
 ddet = dmodel %>%
-  mutate(TorC=target == 1  | competitor == 1) %>%
-  filter(TorC == TRUE) %>%
-  mutate(target = as.factor(as.character(target))) %>%
+  filter(target == 1  | competitor == 1) %>%
+  mutate(target = as.factor(as.character(target)),pragContext=as.factor(as.character(pragContext)),cond=as.factor(as.character(cond)),noun==as.factor(as.character(noun))) %>%
   droplevels()
+
+# look at contrasts
+contrasts(ddet$pragContext)
+contrasts(ddet$cond)
 
 # be sure to accommodate new click names
 d_prior = ddet %>% 
@@ -101,30 +106,31 @@ d_noun = ddet %>%
   filter(window == "noun") %>% 
   droplevels()
 
-nrow(d_prior) # 8850
-nrow(d_adj) # 7639
-nrow(d_noun) # 15660
+nrow(d_prior) # 1278
+nrow(d_adj) # 2159
+nrow(d_noun) # 2467
 
-# no effect, as expected in prior window
-# dc_baseline = cbind(d_baseline,myCenter(d_baseline[,c("size","condition")]))
-# m.baseline = glmer(target ~ condition*csize + (1+condition+csize|workerid) + (1|noun),family="binomial",data=dc_baseline)
-# summary(m.baseline)
-# 
-# # no effect, as expected in gender window
-# dc_gender = cbind(d_gender,myCenter(d_gender[,c("size","condition")]))
-# m.gender = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|noun),family="binomial",data=dc_gender)
-# summary(m.gender)
-# 
-# # the crucial window: (still work on convergence issues)
-# contrasts(d_determiner$size) # big reference level
-# dc_determiner = cbind(d_determiner,myCenter(d_determiner[,c("size","condition")]))
-# m.determiner = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|noun),family="binomial",data=dc_determiner)
-# summary(m.determiner)
-# 
-# dc_noun = cbind(d_noun,myCenter(d_noun[,c("size","condition")]))
-# m.noun = glmer(target ~ condition*csize + (1+condition+size|workerid) + (1|noun),family="binomial",data=dc_noun)
-# summary(m.noun)
-# 
-# # simple effects analysis to probe interaction in determiner window
-# m_determiner.simple = glmer(target ~ condition*size-size + (1+condition+size|workerid) + (1|noun),family="binomial",data=dc_determiner)
-# summary(m_determiner.simple)
+# prior window (no effects expected):
+# note on random effects structure for all models: each noun did not occur in both contrast and both pragcontext conditions, so random by-noun slopes for these effects are not included
+# weirdly, contrastive inference effect (cond effect) already observed in prior window? investigate further by adding trial number as interacting variable to test for learning effects
+dc_prior = cbind(d_prior,myCenter(d_prior[,c("cond","pragContext")]))
+m.prior = glmer(target ~ ccond*cpragContext + (1+ccond|workerid) + (1|noun),family="binomial",data=dc_prior)
+summary(m.prior)
+
+
+# the crucial adjective window:
+# Negative main effect of condition: fewer target selections in the absence of a contrast (replicating general contrastive inference effect) -- as predicted (replication of Ryskin et al)
+# Positive effect of pragmatic context: more target selections in reliable speaker condition -- as predicted (replication of Ryskin et al)
+# Negative interaction term: contrast effect was bigger for reliable than unreliable speaker condition -- as predicted (replication of Ryskin et al)
+dc_adj = cbind(d_adj,myCenter(d_adj[,c("cond","pragContext")]))
+m.adj = glmer(target ~ ccond*cpragContext + (1+ccond|workerid) + (1|noun),family="binomial",data=dc_adj)
+summary(m.adj)
+
+# simple effects analysis to probe interaction found in model above confirms that the interaction is driven by a bigger contrast effect in the good compared to the bad pragContext condition
+m.adj.simple = glmer(target ~ pragContext*cond - cond + (1+cond|workerid) + (1|noun),family="binomial",data=dc_adj)
+summary(m.adj.simple)
+
+# noun window -- model doesn't converge because everyone is selecting target (As expected), so no variance to fit
+dc_noun = cbind(d_noun,myCenter(d_noun[,c("cond","pragContext")]))
+m.noun = glmer(target ~ ccond*cpragContext + (1+ccond|workerid) + (1|noun),family="binomial",data=dc_noun)
+summary(m.noun)
