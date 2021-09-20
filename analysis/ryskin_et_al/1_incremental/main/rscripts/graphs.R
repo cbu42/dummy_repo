@@ -6,7 +6,7 @@ library(lmerTest)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("helpers.R")
-#setwd('../data')
+setwd('../data')
 theme_set(theme_bw())
 
 # color-blind-friendly palette
@@ -49,7 +49,6 @@ df$click2 <- gsub(" ", "", df$click2)
 df$click3 <- gsub("\\]", "", df$click3)
 df$click3 <- gsub("\\'", "", df$click3)
 df$click3 <- gsub(" ", "", df$click3)
-?gsub
 
 df = df %>% 
   mutate(click_noun = case_when(is.na(click3) ~ click2,
@@ -63,6 +62,26 @@ df = df %>%
   mutate(loc_competitor_pic = case_when(feature == "small" ~ loc_small_filler,
                                         feature == "big" ~ loc_big_filler,
                                         TRUE ~ "NA"))
+df$response_times
+
+### PULL RESPONSE TIMES
+df$response_temp = NA
+df$response_temp <- gsub("\\[", "", df$response_times)
+df$response_temp <- gsub("\\]", "", df$response_temp)
+# response times (hence t) for each window
+df = df %>% 
+  separate(response_temp,into = c("t_prior", "t2", "t3"), sep=", ")
+# accounting for modified vs unmodified cases
+df = df %>% 
+  mutate(t_noun = case_when(is.na(t3) ~ t2,
+                                TRUE ~ t3)) %>% 
+  mutate(t_adj = case_when(is.na(t3) ~ "NA",
+                               TRUE ~ t2)) %>% 
+  select(-t2, -t3)
+#char to int
+df$t_prior <- as.integer(df$t_prior)
+df$t_adj <- as.integer(df$t_adj)
+df$t_noun <- as.integer(df$t_noun)
 
 
 ### EXCLUSIONS
@@ -302,6 +321,7 @@ contrastive_inf = ggplot(toplot_target, aes(x=trial_number, y=Mean, color=pragCo
 contrastive_inf
 ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,height=4.5)
 
+# TODO:
 # create a binary variable: TRUE if participant has seen filler trial before test trials?
 # create a continuous var: how many filler trials have they seen before the first test trial?
 # then, recreate the above plot with those ^^ vars as an additional variable. facet the plot using the above. 
@@ -331,15 +351,7 @@ toplot_trialType =  d_test2 %>%
 
 #group_by: workerid
 #df_f: filter for fillers
-
-
 #df_t: filter for tests
-
-
-names(toplot_target)
-table(toplot_trialType$trialType)
-
-# TODO: filler boolean vars
 # toplot_trialType$filler_first = NA # creates a new variable filled with NAs
 # ind_f <- d_test2 %>% 
 #   ???group_by(workerid) %>% 
@@ -347,8 +359,6 @@ table(toplot_trialType$trialType)
 #   min(trial_number)
 ind  <-  toplot_trialType$trial_number = 1 & toplot_trialType$trialType == 'filler'
 toplot_trialType$filler_first[ind] = v1
-
-
 
 
 view(toplot_target)
@@ -430,7 +440,7 @@ m_pragtrain3_adjnoun_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond +
                                   glmerControl(optimizer = 'bobyqa',
                                                optCtrl=list(maxfun=2e5)))
 
-#corresponds to table 4 on page 18 of ryskin et al.
+#corresponds to table 4 on page 18 of ryskin et al. (possibly fixed effects only??)
 summary(m_pragtrain3_adjnoun_glmm)
 #contrast_cond1:prag... the neg estimate means the effect of contrast is smaller for unreliable speakers compared to reliable condition
 #TODO: look at adj window as well!
@@ -475,18 +485,19 @@ names(pragtrain3_crit2)
 names(pragtrain3_crit)
 
 #change_cb: parameter target_AR1_c from original does not exist
-m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_corrected + target_AR1_c ,
-                                       data = pragtrain3_crit2 )
+# m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_corrected + target_AR1_c ,
+#                                        data = pragtrain3_crit2 )
 
 #original
-# m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_c + target_AR1_c ,
-#                                        data = pragtrain3_crit2 )
+m_pragtrain3_adjnoun_glmm.order3 = glm(target_fix ~ contrast_cond*prag_context_cond*trialorder_c + target_AR1_c ,
+                                       data = pragtrain3_crit2 )
 summary(m_pragtrain3_adjnoun_glmm.order3)
 
 ### E2 GLMM: Adj window
 
 # expt2 adj glmm
-m_pragtrain3_adj_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond + target_AR1_corrected +                              (1+contrast_cond+target_AR1_corrected|subject)+(1+contrast_cond+target_AR1_corrected|audio),
+m_pragtrain3_adj_glmm = glmer(target_fix ~ contrast_cond*prag_context_cond + target_AR1_corrected +       
+                                (1+contrast_cond+target_AR1_corrected|subject)+(1+contrast_cond+target_AR1_corrected|audio),
                               data = pragtrain3_crit %>% filter(timebin <= 830),
                               family = binomial(link = 'logit'),
                               glmerControl(optimizer = 'bobyqa',
