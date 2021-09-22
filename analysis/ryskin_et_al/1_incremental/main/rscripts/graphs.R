@@ -378,6 +378,14 @@ ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,h
 
 ### PART II: PLOT CATEGORICAL DATA AGAINST EYE MOVEMENT DATA
 
+# load eye-tracking data from Ryskin 2019
+# adj_tar <- read.delim("ryskin_eyetracking/PragTrain3_adj_window_for_tardur_tarDURdatastruct.txt")
+# adjn_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt")
+# adjn_tar <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_window_for_tardur_tarDURdatastruct.txt")
+# noun_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_noun_for_GLMM_timesummLongForm.txt")
+# noun_tar <- read.delim("ryskin_eyetracking/PragTrain3_noun_window_for_tardur_tarDURdatastruct.txt")
+# baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
+
 # expt2 reading in adj+noun window data for glmm
 # reads in a large file - can be downloaded locally from Ryskin 2019's OSF page
 # pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
@@ -453,7 +461,9 @@ toplot_eye = pragtrain3_crit %>%
   mutate(Region = fct_recode(Region,"target" = "target_fix","competitor"="compet_fix","other"="other_fix")) %>% 
   # group_by(contrast_cond,prag_context_cond,window,Region,noun) %>% 
   group_by(contrast_cond,prag_context_cond,window,Region) %>% 
-  summarize(Mean_fixations=mean(fixation)) %>% 
+  summarize(prop_looks=mean(fixation),ci_low_looks=ci.low(fixation),ci_high_looks=ci.high(fixation)) %>% 
+  ungroup() %>% 
+  mutate(ymin_looks=prop_looks-ci_low_looks,ymax_looks=prop_looks+ci_high_looks) %>% 
   rename(pragContext = prag_context_cond, cond = contrast_cond)
 
 toplot_select =  d_test %>%
@@ -469,37 +479,45 @@ toplot_select =  d_test %>%
   # group_by(cond,pragContext,window,noun) %>%
   group_by(cond,pragContext,window) %>%
   summarize(m_target=mean(target),m_competitor=mean(competitor),m_other=mean(other),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor),ci_low_other=ci.low(other),ci_high_other=ci.high(other)) %>%
-  pivot_longer(names_to="location",values_to="Mean_selections",cols=m_target:m_other) %>%
+  ungroup() %>% 
+  mutate(info_target = paste(m_target, m_target-ci_low_target, m_target+ci_high_target), info_competitor=paste(info_competitor = paste(m_competitor, m_competitor-ci_low_competitor, m_competitor+ci_high_competitor)),info_other = paste(m_other, m_other-ci_low_other, m_other+ci_high_other)) %>% 
+  select(cond,pragContext,window,info_target,info_competitor,info_other) %>% 
+  pivot_longer(names_to="location",values_to="info_selections",cols=info_target:info_other) %>%
+  separate(info_selections,into=c("prop_selections","ymin_selections","ymax_selections"),sep=" ") %>% 
   # mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
   # mutate(CIHigh=ifelse(location=="m_target",ci_high_target,ifelse(location=="m_competitor",ci_high_competitor,0))) %>%
   # mutate(YMin=Mean-CILow,YMax=Mean+CIHigh) %>%
   #exclude distractor to better resemble ryskin fig. 2
-  mutate(Region=fct_recode(location,"competitor"="m_competitor","target"="m_target","other"="m_other")) %>%
+  mutate(Region=fct_recode(location,"competitor"="info_competitor","target"="info_target","other"="info_other")) %>%
   mutate(Region=fct_rev(Region)) %>%
   ungroup() %>% 
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
   mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
   mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) %>% 
   mutate(cond = fct_relevel(cond,"no_contrast","contrast")) %>% 
-  # select(cond, pragContext, window, Region, Mean_selections,noun)
-  select(cond, pragContext, window, Region, Mean_selections)
+  # select(cond, pragContext, window, Region, prop_selections,noun)
+  select(cond, pragContext, window, Region, prop_selections, ymin_selections, ymax_selections)
 
-toplot_select %>% 
-  arrange(noun,cond,pragContext,window) %>% 
-  view()
-
-toplot_eye %>% 
-  arrange(noun,cond,pragContext,window) %>% 
-  view()
+# toplot_select %>% 
+#   arrange(noun,cond,pragContext,window) %>% 
+#   view()
+# 
+# toplot_eye %>% 
+#   arrange(noun,cond,pragContext,window) %>% 
+#   view()
 
 # toplot = left_join(toplot_select, toplot_eye, by=c("cond","noun","pragContext","window","Region"))
 toplot = left_join(toplot_select, toplot_eye, by=c("cond","pragContext","window","Region")) %>% 
-  mutate(window = fct_relevel(window,"prior","adjective"))
+  mutate(window = fct_relevel(window,"prior","adjective")) %>% 
+  mutate(ymin_selections = as.numeric(ymin_selections),ymax_selections = as.numeric(ymax_selections),prop_selections = as.numeric(prop_selections)) %>% 
+  filter(window != "prior")
 nrow(toplot)
 toplot
 
-ggplot(toplot, aes(x=Mean_selections,y=Mean_fixations,color=Region,shape=cond)) +
+ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=cond)) +
   geom_point() +
+  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
   scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
   labs(
     shape="Contrast condition",
@@ -509,12 +527,29 @@ ggplot(toplot, aes(x=Mean_selections,y=Mean_fixations,color=Region,shape=cond)) 
   xlim(0,1) +
   ylim(0,1) +
   facet_grid(pragContext~window)
-ggsave("../graphs/corr_faceted.pdf")
+ggsave("../graphs/corr_faceted_pragcond.pdf")
 
-ggplot(toplot, aes(x=Mean_selections,y=Mean_fixations,color=Region,shape=pragContext,group=1)) +
+ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
+  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
+  labs(
+    shape="Contrast condition",
+    # color="Window",
+    x="Proportion of selections",
+    y="Proportion of looks (Ryskin et al 2019, Exp. 2)") +
+  xlim(0,1) +
+  ylim(0,1) +
+  facet_grid(cond~window)
+ggsave("../graphs/corr_faceted_contrastcond.pdf")
+
+ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext,group=1)) +
+  geom_abline(intercept=0,slope=1,color="gray",linetype="dashed") +
   geom_smooth(method="lm") +
   geom_point() +
-  geom_abline(intercept=0,slope=1,color="gray",linetype="dashed") +
+  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
   scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
   labs(
     shape="Contrast condition",
@@ -527,281 +562,39 @@ ggsave("../graphs/corr_overall.pdf",width=5.5,height=3.5)
 
 #selections on x axis, corresponding eye movements on y axis
 # overall correlation between eye movement and decision task data
-cor.test(toplot$Mean_selections,toplot$Mean_fixations) # .89. df=22, p<.0001
+cor.test(toplot$prop_selections,toplot$prop_looks) # .88. df=22, p<.0001
 
 # correlation between eye movement and decision task data separately by time window
 cors_window = toplot %>% 
   filter(window != "prior") %>% 
   group_by(window) %>% 
-  summarize(Correlation=round(cor.test(Mean_selections,Mean_fixations)$estimate,2),P=round(cor.test(Mean_selections,Mean_fixations)$p.value,5))
+  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
 cors_window # .38 (in adjective window, ns); .99 in noun window, p<.0001
 
 # correlation between eye movement and decision task data separately by pragmatic reliability condition
 cors_prag = toplot %>% 
   filter(window != "prior") %>% 
   group_by(pragContext) %>% 
-  summarize(Correlation=round(cor.test(Mean_selections,Mean_fixations)$estimate,2),P=round(cor.test(Mean_selections,Mean_fixations)$p.value,5))
+  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
 cors_prag # .38 (in adjective window, ns); .99 in noun window, p<.0001
 
 
 
-# End: Ryskin script
-
-
-# load eye-tracking data from Ryskin 2019
-# adj_tar <- read.delim("ryskin_eyetracking/PragTrain3_adj_window_for_tardur_tarDURdatastruct.txt")
-# adjn_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt")
-# adjn_tar <- read.delim("ryskin_eyetracking/PragTrain3_adjnoun_window_for_tardur_tarDURdatastruct.txt")
-# noun_GLMM <- read.delim("ryskin_eyetracking/PragTrain3_noun_for_GLMM_timesummLongForm.txt")
-# noun_tar <- read.delim("ryskin_eyetracking/PragTrain3_noun_window_for_tardur_tarDURdatastruct.txt")
-# baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
-
-# order should be: baseline / gender / determiner + name / noun ---> will ignore  "preview" since there's no corresponding window in the incremental decision experiment
-
-g = rbind(baseline,gender,determiner,name,end)  %>% 
-  mutate(item=word(as.character(instruction), -1))
-
-# re-load incremental decision data 
-s = read.csv("trials_merged.csv", header = TRUE)  %>% 
-  mutate(item=word(as.character(instruction3), -1))
-
-s$response = gsub(" ","",s$response)
-s$response = gsub("\\[","",s$response)
-s$response = gsub("\\]","",s$response)
-s$response = gsub("\\'","",s$response)
-s$response = gsub("AOI","",s$response)
-
-
-selection = s %>%
-  filter(ExpFiller=="Exp") %>%
-  separate(response,into=c("baseline","gender","determiner+name","noun"),sep=",") %>%
-  gather(window,location,baseline:noun) %>%
-  select(workerid,Prime,condition,determiner,size,window,location,target1,target2,competitor1,competitor2,item) %>%
-  mutate(targetclick=ifelse(location==target1,1,ifelse(location==target2,1,0))) %>%
-  mutate(competitorclick=ifelse(location==competitor1,1,ifelse(location==competitor2,1,0))) %>%
-  mutate(distractorclick=ifelse(targetclick=="1",0,ifelse(competitorclick=="1",0,1))) %>%
-  group_by(determiner,size,window,item) %>%
-  summarize(Mean_target_selection=mean(targetclick),Mean_competitor_selection=mean(competitorclick),Mean_distractor_selection=mean(distractorclick))
-
-gaze =  g %>%
-  filter(TrackLoss=="FALSE") %>%
-  select(Prime,condition,determiner,size,targetlook,competitorlook,residuelook,whichword,item) %>%
-  mutate(distractorlook=ifelse(targetlook=="1",0,ifelse(competitorlook=="1",0,ifelse(residuelook=="1",0,1)))) %>%
-  mutate(targetdistractorlook = ifelse(targetlook=="1",1,ifelse(distractorlook=="1",1,0))) %>%
-  mutate(competitordistractorlook = ifelse(competitorlook=="1",1,ifelse(distractorlook=="1",1,0))) %>%
-  mutate(window=as.character(whichword)) %>%
-  mutate(window = ifelse(whichword =="determiner","determiner+name", ifelse(whichword=="name","determiner+name",ifelse(whichword=="end","noun",window)))) %>%
-  group_by(determiner,size,window,item) %>%
-  summarize(Mean_target_look=mean(targetlook),Mean_competitor_look=mean(competitorlook),Mean_distractor_look=mean(distractorlook),Mean_targetdistractor_look=mean(targetdistractorlook),Mean_competitordistractor_look=mean(competitordistractorlook))
-
-df = merge(selection, gaze, by=c("determiner","size","window","item"))
-df$window_re<- factor(df$window, levels = c("baseline","gender","determiner+name","noun"))
-
-# CORRELATIONAL ANALYSES
-
-# compute and visualize overall correlation
-longer_selections = df %>% 
-  select(-Mean_target_look,-Mean_competitor_look,-Mean_distractor_look,-Mean_targetdistractor_look,-Mean_competitordistractor_look,-window_re) %>% 
-  pivot_longer(cols=c("Mean_target_selection","Mean_competitor_selection","Mean_distractor_selection"),names_to=c("delete_this","Region","remove_this"),names_sep=c("_"),values_to="prop_selections") %>% 
-  select(-delete_this,-remove_this)
-
-longer_looks = df %>% 
-  select(-Mean_target_selection,-Mean_competitor_selection,-Mean_distractor_selection,-Mean_targetdistractor_look,-Mean_competitordistractor_look,-window_re) %>% 
-  pivot_longer(cols=c("Mean_target_look","Mean_competitor_look","Mean_distractor_look"),names_to=c("delete_this","Region","remove_this"),names_sep=c("_"),values_to="prop_looks") %>% 
-  select(-delete_this,-remove_this)
-
-toplot = longer_looks %>% 
-  left_join(longer_selections,by=c("determiner","size","window","Region","item")) %>% 
-  mutate(determiner=fct_recode(determiner,"number"="two","number"="three")) %>% 
-  mutate(Region=fct_relevel(Region,"target","competitor"),window=fct_relevel(window,"baseline","gender")) %>% 
-  droplevels()
-
-#selections on x axis, corresponding eye movements on y axis
-# overall correlation between eye movement and decision task data
-cor.test(toplot$prop_looks,toplot$prop_selections) # .87
-
-# correlation between eye movement and decision task data separately by time window
-cors_window = toplot %>% 
-  group_by(window) %>% 
-  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
-cors_window # .57, .81, .91, .96
-
-# how many unique items?
-toplot %>% 
-  filter(window == "baseline" & Region == "target") %>% 
-  select(determiner,size,item) %>% 
-  unique() %>% 
-  nrow()
-
-ggplot(toplot, aes(x=prop_selections, y=prop_looks)) +
-  geom_point(size=2,aes(color=Region),alpha=.6) +
-  geom_smooth(method='lm',size=1,color="grey26",group=1) +
-  # geom_smooth(method='lm',size=1,aes(color=Region)) +
-  geom_abline(slope=1,linetype="dotted",color="gray40") +
-  geom_text(data=cors_window, aes(label=paste("r=",Correlation)), x=.5,y=.9) +
-  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
-  labs(
-    # shape="Window",
-    # color="Window",
-    x="Proportion of selections (Exp. 1)",
-    y="Proportion of looks (S. & B., 2020)") +
-  xlim(0,1) +
-  ylim(0,1) +
-  # coord_fixed() +
-  #facets by window. for each window it recreates the same plot
-  facet_wrap(~window,nrow=1) 
-ggsave("../graphs/corr-window.pdf",width=10,height=2.5)
-
-
-# collapsing across items
-agr = toplot %>% 
-  group_by(window,Region,determiner,size) %>% 
-  summarize(prop_selections = mean(prop_selections),prop_looks=mean(prop_looks))
-
-cors_window_it = agr %>% 
-  group_by(window) %>% 
-  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
-cors_window_it # .87, .98, .97, 1
-
-ggplot(agr, aes(x=prop_selections, y=prop_looks, group=1)) +
-  geom_point(size=2,aes(color=window)) +
-  geom_smooth(method='lm',size=1,color="grey26") +
-  geom_abline(slope=1,linetype="dotted",color="gray40") +
-  geom_text(data=cors_window_it, aes(label=paste("r=",Correlation)), x=.5,y=.9) +
-  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
-  labs(
-    # shape="Window",
-    # color="Window",
-    x="Proportion of selections (Exp. 1)",
-    y="Proportion of looks (S. & B., 2020)") +
-  xlim(0,1) +
-  ylim(0,1) +
-  # coord_fixed() +
-  facet_wrap(~window) +
-  theme(legend.position="top")
-ggsave("../graphs/corr-window-coll.pdf",width=6,height=3)
-
-
-
-# correlation between eye movement and decision task data separately by condition within determiner window
-cors_determiner = toplot %>% 
-  filter(window == "determiner+name") %>% 
-  group_by(determiner, size) %>% 
-  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
-cors_determiner
-
-# determiner size  Correlation     P
-# <fct>      <chr>       <dbl> <dbl>
-# 1 all        big          0.94     0
-# 2 all        small        0.87     0
-# 3 some       big          0.88     0
-# 4 some       small        0.82     0
-# 5 number     big          0.95     0
-# 6 number     small        0.96     0
-
-ggplot(toplot %>% filter(window == "determiner+name"), aes(x=prop_selections, y=prop_looks)) +
-  geom_point(size=2,aes(color=Region,alpha=size)) +
-  geom_smooth(method='lm',size=1,color="grey26",group=1) +
-  # geom_smooth(method='lm',size=1) +
-  geom_abline(slope=1,linetype="dotted",color="gray40") +
-  geom_text(data=cors_determiner, aes(label=paste("r=",Correlation),alpha=size), x=c(.3,.7,.3,.7,.3,.7),y=.9, show.legend = FALSE) +
-  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
-  scale_alpha_manual(values=c(.9,.3)) +
-  labs(
-    size="Set size",
-    color="Region",
-    x="Proportion of selections (Exp. 1)",
-    y="Proportion of looks (S. & B., 2020)") +
-  xlim(0,1) +
-  ylim(0,1) +
-  # coord_fixed() +
-  facet_wrap(~determiner,nrow=1) +
-  theme(legend.position="top",
-        legend.margin=margin(0,0,0,0),
-        legend.box.margin=margin(-10,-10,-10,-10),legend.spacing.y = unit(0.001, 'cm'))
-ggsave("../graphs/corr-determiner.pdf",width=6,height=2.5)
-
-
-# collapsing across items
-agr = toplot %>% 
-  filter(window == "determiner+name") %>% 
-  group_by(window,Region,determiner,size) %>% 
-  summarize(prop_selections = mean(prop_selections),prop_looks=mean(prop_looks))
-
-cors_determiner_it = agr %>% 
-  group_by(determiner, size) %>% 
-  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
-cors_determiner_it # all close to 1 but p > .05 (too few data points)
-
-
-
-# correlation between eye movement and decision task data separately by region
-cors_reg = toplot %>% 
-  group_by(Region) %>% 
-  summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
-cors_reg # .9, .68, .73 
-
-ggplot(toplot, aes(x=prop_selections, y=prop_looks, group=1)) +
-  geom_point(size=2,aes(color=Region,shape=window)) +
-  geom_smooth(method='lm',size=1,color="grey26") +
-  geom_abline(slope=1,linetype="dotted",color="gray40") +
-  geom_text(data=cors_reg, aes(label=paste("r=",Correlation)), x=.5,y=.9) +
-  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
-  labs(shape="Window",
-       color="Region",
-       x="Proportion of selections (Exp. 1)",
-       y="Proportion of looks (S. & B., 2020)") +
-  xlim(0,1) +
-  ylim(0,1) +
-  # coord_fixed() +
-  facet_wrap(~Region) +
-  guides(color = FALSE) +
-  theme(legend.position="top",
-        legend.margin=margin(0,0,0,0),
-        legend.box.margin=margin(-10,-10,-10,-10),legend.spacing.y = unit(0.001, 'cm'))
-ggsave("../graphs/corr-region.pdf",width=6,height=2.5)
-
-# other plots: full by-condition plot
-ggplot(toplot, aes(x=prop_selections, y=prop_looks, group=1)) +
-  geom_point(size=2,aes(color=window,shape=Region),alpha=.7) +
-  geom_smooth(method='lm',size=1,color="grey26") +
-  geom_abline(slope=1,linetype="dotted",color="gray40") +
-  # geom_text(data=cors, aes(label=paste("r=",Correlation)), x=.2,y=.9) +
-  scale_color_manual(values=c(cbPalette[4],cbPalette[1],cbPalette[5],cbPalette[7])) +
-  labs(shape="Region",
-       color="Window",
-       x="Proportion of selections (Exp. 1)",
-       y="Proportion of looks (S. & B., 2020)") +
-  xlim(0,1) +
-  ylim(0,1) +
-  # coord_fixed() +
-  facet_grid(size~determiner) +
-  theme(legend.direction = "horizontal", legend.box = "vertical") +
-  theme(legend.position="top",
-        legend.margin=margin(0,0,0,0),
-        legend.box.margin=margin(-10,-10,-10,-10),legend.spacing.y = unit(0.001, 'cm'))#,legend.box.spacing = unit(0.01, 'cm'),) 
-# guides(fill=guide_legend(nrow=2,byrow=TRUE))
-ggsave("../graphs/correlations-bycondition.pdf",width=6,height=4)
-
-toplot$cprop_selections = toplot$prop_selections - mean(toplot$prop_selections)
-
-
 # model summary: 
-# - big main effect of explicit beliefs
-# - effect of explicit beliefs doesn't vary by window or region, except: beliefs have much smaller explanatory power for distractor looks
-# NOT IMPORTANT: - overall fewer looks to distractor in all windows except baseline (interactions with window); overall fewer looks to competitor in noun window
-contrasts(toplot$window)
-contrasts(toplot$window) = cbind("det.to.baseline"=c(1,0,0,0),"det.to.gender"=c(0,1,0,0),"det.to.noun"=c(0,0,0,1))
+# - main effect of explicit beliefs in predicted direction
+# - effect of explicit beliefs varies by window: bigger in noun than adj window
+# effect of explicit beliefs varies by region: beliefs have less explanatory power for distractor looks (but no diff between target and competitor) --> overall, the correlation plots show greater "other" looks across the board than predicted by selection proportions
 
-m = lmer(prop_looks ~ cprop_selections*window*Region + (1+cprop_selections*window*Region|item), data=toplot)
-summary(m)
+# contrasts(toplot$window)
+# contrasts(toplot$window) = cbind("det.to.baseline"=c(1,0,0,0),"det.to.gender"=c(0,1,0,0),"det.to.noun"=c(0,0,0,1))
+tomodel = cbind(toplot,myCenter(toplot[,c("prop_selections","pragContext","cond")]))
 
-#cogsci paper model:
-m = lm(prop_looks ~ cprop_selections + cprop_selections:window + cprop_selections:Region, data=toplot)
+#cogsci 2020 paper model:
+m = lm(prop_looks ~ cprop_selections + cprop_selections:window + cprop_selections:Region, data=tomodel)
 summary(m)
 
 # adding interactions with experimental conditions of interest also doesn't change anything
-m = lm(prop_looks ~ cprop_selections + cprop_selections:window + cprop_selections:Region+ cprop_selections:determiner + cprop_selections:size, data=toplot)
+m = lm(prop_looks ~ cprop_selections + cprop_selections:window + cprop_selections:Region+ cprop_selections:cpragContext + cprop_selections:ccond, data=tomodel)
 summary(m)
 
 # model for only targets (because full model violates assumption of independence of samples)
@@ -814,7 +607,7 @@ summary(m.targ)
 
 
 
-# submodels for each window
+# submodels for each window -- NOT YET RUN
 d_baseline = toplot %>% 
   filter(window == "baseline") %>% 
   mutate(cprop_selections = prop_selections - mean(prop_selections))
@@ -842,231 +635,4 @@ d_noun = toplot %>%
 
 m.noun = lm(prop_looks ~ cprop_selections*Region, data=d_noun)
 summary(m.noun)
-
-
-# PLOT PROPORTIONS OF LOOKS
-
-# proportion of looks to target, competitor, and residue
-gazer =  g %>%
-  filter(TrackLoss=="FALSE" & time < 300) %>%
-  select(Prime,condition,determiner,size,targetlook,competitorlook,residuelook,whichword,item,time) %>%
-  mutate(distractorlook=ifelse(targetlook=="1",0,ifelse(competitorlook=="1",0,ifelse(residuelook=="1",0,1)))) %>%
-  # mutate(window=as.character(whichword)) %>%
-  # mutate(window = ifelse(whichword =="determiner","determiner+name", ifelse(whichword=="name","determiner+name",ifelse(whichword=="end","noun",window)))) %>%
-  filter(targetlook == 1 | competitorlook == 1 | residuelook== 1) %>% #CHANGE
-  #filter(targetlook == 1 | competitorlook == 1) %>% #CHANGE
-  group_by(time,condition,size) %>%
-  summarize(Mean_target_look=mean(targetlook),Mean_competitor_look=mean(competitorlook),Mean_residue_look=mean(residuelook),target_ci_low=ci.low(targetlook),target_ci_high=ci.high(targetlook),competitor_ci_low=ci.low(competitorlook),competitor_ci_high=ci.high(competitorlook),residue_ci_low=ci.low(residuelook),residue_ci_high=ci.high(residuelook)) %>%
-  ungroup() %>%
-  mutate(YMin_target=Mean_target_look-target_ci_low,YMax_target=Mean_target_look+target_ci_high,YMin_competitor=Mean_competitor_look-competitor_ci_low,YMax_competitor=Mean_competitor_look+competitor_ci_high,YMin_residue=Mean_residue_look-residue_ci_low,YMax_residue=Mean_residue_look+residue_ci_high)
-
-# prepare data for plotting
-long_props = gazer %>% 
-  select(condition,size,time,Mean_target_look,Mean_residue_look,Mean_competitor_look) %>%  #,other_prop) %>% 
-  pivot_longer(cols = Mean_target_look:Mean_competitor_look,names_to=c("region"),values_to=c("proportion")) %>% 
-  separate(region,c(NA,"region",NA))
-
-long_ymin = gazer %>% 
-  select(condition,size,time,YMin_target,YMin_residue,YMin_competitor) %>%  #,other_prop) %>% 
-  pivot_longer(cols = YMin_target:YMin_competitor,names_to=c("region"),values_to=c("ymin")) %>% 
-  separate(region,c(NA,"region"))
-
-long_ymax = gazer %>% 
-  select(condition,size,time,YMax_target,YMax_residue,YMax_competitor) %>%  #,other_prop) %>% 
-  pivot_longer(cols = YMax_target:YMax_competitor,names_to=c("region"),values_to=c("ymax")) %>% 
-  separate(region,c(NA,"region"))
-
-toplot = long_props %>%
-  left_join(long_ymin,by=c("condition","size","time","region")) %>%
-  left_join(long_ymax,by=c("condition","size","time","region")) %>%
-  mutate(region = fct_relevel(region,"target","competitor"),determiner = fct_relevel(as.factor(condition),"all","some"))
-
-offset = 71
-windowsize = 15.9 #ms
-onsets = g %>% 
-  summarize(gender=mean(gender_onset)*windowsize-1000,determiner=mean(determiner_onset)*windowsize-1000,name=mean(name_onset)*windowsize-1000,noun=mean(noun_onset)*windowsize-1000)
-
-windows = tibble(window=c("baseline","gender","determiner","name","noun"),x=c(24+offset,70+offset,118+offset,159+offset,188+offset)*windowsize-1000)
-vlinesize=.5
-
-toplot$ttime = (toplot$time*windowsize)-1000
-
-ggplot(toplot, aes(x=ttime, y=proportion)) +
-  geom_line(size=1, aes(color=determiner,linetype=size)) +
-  geom_ribbon(aes(ymin=ymin,ymax=ymax,fill=determiner,group=interaction(determiner,size)),alpha=.3) +
-  scale_fill_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  geom_vline(aes(xintercept=onsets$gender),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$determiner),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$name),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$noun),size=vlinesize) +
-  geom_text(data=windows,aes(label=window,x=x),y=.9,size=2) +
-  xlab("Time in ms relative to audio onset") +
-  ylab("Proportion of looks to target") +  
-  scale_x_continuous(breaks=seq(0,4000,by=400),minor_breaks = seq(200,3800,by=400)) +
-  facet_wrap(~region)
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/proportions_condsize_withresidue.pdf",width=9,height=3)
-
-# only target and residue looks
-ttoplot = toplot %>% 
-  filter(region == "target" | region == "residue") %>% 
-  droplevels()
-
-ggplot(ttoplot, aes(x=ttime, y=proportion)) +
-  geom_line(size=1, aes(color=determiner,linetype=size)) +
-  geom_ribbon(aes(ymin=ymin,ymax=ymax,fill=determiner,group=interaction(determiner,size)),alpha=.3) +
-  scale_fill_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  geom_vline(aes(xintercept=onsets$gender),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$determiner),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$name),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$noun),size=vlinesize) +
-  geom_text(data=windows,aes(label=window,x=x),y=.95,size=2.5) +
-  xlab("Time in ms relative to audio onset") +
-  ylab("Proportion of looks to region") +  
-  scale_x_continuous(breaks=seq(0,4000,by=400),minor_breaks = seq(200,3800,by=400)) +
-  facet_wrap(~region)
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/proportions_condsize_withresidue_tr.pdf",width=9,height=3)
-
-# only target looks
-ttoplot = toplot %>% 
-  filter(region == "target") %>% 
-  droplevels()
-
-ggplot(ttoplot, aes(x=ttime, y=proportion)) +
-  geom_line(size=1, aes(color=determiner,linetype=size)) +
-  geom_ribbon(aes(ymin=ymin,ymax=ymax,fill=determiner,group=interaction(determiner,size)),alpha=.3) +
-  scale_fill_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  geom_vline(aes(xintercept=onsets$gender),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$determiner),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$name),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$noun),size=vlinesize) +
-  geom_text(data=windows,aes(label=window,x=x),y=.9,size=2) +
-  xlab("Time in ms relative to audio onset") +
-  ylab("Proportion of looks to target") +  
-  scale_x_continuous(breaks=seq(0,4000,by=400),minor_breaks = seq(200,3800,by=400)) 
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/proportions_condsize_withresidue_target.pdf",width=5,height=3)
-
-
-
-# > g %>% group_by(whichword) %>% summarize(mintime=min(time),meantime=mean(time),mediantime=median(time),maxtime=max(time))
-# # A tibble: 5 x 5
-# whichword  mintime meantime mediantime maxtime
-# * <chr>        <int>    <dbl>      <dbl>   <int>
-#   1 baseline        72      93         93      114
-# 2 determiner     171     191.       191      212
-# 3 end            244     287.       274      868
-# 4 gender         115     142.       142.     170
-# 5 name           212     228.       227      244
-
-# proportion of looks to target and competitor
-gaze =  g %>%
-  filter(TrackLoss=="FALSE" & time < 300) %>%
-  select(Prime,condition,determiner,size,targetlook,competitorlook,residuelook,whichword,item,time) %>%
-  mutate(distractorlook=ifelse(targetlook=="1",0,ifelse(competitorlook=="1",0,ifelse(residuelook=="1",0,1)))) %>%
-  # mutate(window=as.character(whichword)) %>%
-  # mutate(window = ifelse(whichword =="determiner","determiner+name", ifelse(whichword=="name","determiner+name",ifelse(whichword=="end","noun",window)))) %>%
-  filter(targetlook == 1 | competitorlook == 1) %>% #CHANGE
-  #filter(targetlook == 1 | competitorlook == 1) %>% #CHANGE
-  group_by(time,condition,size) %>%
-  summarize(Mean_target_look=mean(targetlook),Mean_competitor_look=mean(competitorlook),target_ci_low=ci.low(targetlook),target_ci_high=ci.high(targetlook),competitor_ci_low=ci.low(competitorlook),competitor_ci_high=ci.high(competitorlook)) %>%
-  ungroup() %>%
-  mutate(YMin_target=Mean_target_look-target_ci_low,YMax_target=Mean_target_look+target_ci_high,YMin_competitor=Mean_competitor_look-competitor_ci_low,YMax_competitor=Mean_competitor_look+competitor_ci_high)
-
-# prepare data for plotting
-long_props = gaze %>% 
-  select(condition,size,time,Mean_target_look,Mean_competitor_look) %>%  #,other_prop) %>% 
-  pivot_longer(cols = Mean_target_look:Mean_competitor_look,names_to=c("region"),values_to=c("proportion")) %>% 
-  separate(region,c(NA,"region",NA))
-
-long_ymin = gaze %>% 
-  select(condition,size,time,YMin_target,YMin_competitor) %>%  #,other_prop) %>% 
-  pivot_longer(cols = YMin_target:YMin_competitor,names_to=c("region"),values_to=c("ymin")) %>% 
-  separate(region,c(NA,"region"))
-
-long_ymax = gaze %>% 
-  select(condition,size,time,YMax_target,YMax_competitor) %>%  #,other_prop) %>% 
-  pivot_longer(cols = YMax_target:YMax_competitor,names_to=c("region"),values_to=c("ymax")) %>% 
-  separate(region,c(NA,"region"))
-
-toplot = long_props %>%
-  left_join(long_ymin,by=c("condition","size","time","region")) %>%
-  left_join(long_ymax,by=c("condition","size","time","region")) %>%
-  mutate(region = fct_relevel(region,"target","competitor"),determiner = fct_relevel(as.factor(condition),"all","some"))
-
-# dodge=position_dodge(.9)
-offset = 71
-windowsize = 15.9 #ms
-onsets = g %>% 
-  summarize(gender=mean(gender_onset)*windowsize-1000,determiner=mean(determiner_onset)*windowsize-1000,name=mean(name_onset)*windowsize-1000,noun=mean(noun_onset)*windowsize-1000)
-
-windows = tibble(window=c("baseline","gender","determiner","name","noun"),x=c(24+offset,70+offset,118+offset,159+offset,188+offset)*windowsize-1000)
-vlinesize=.5
-
-toplot$ttime = (toplot$time*windowsize)-1000
-
-ggplot(toplot, aes(x=ttime, y=proportion)) +
-  geom_line(size=1, aes(color=determiner,linetype=size)) +
-  geom_ribbon(aes(ymin=ymin,ymax=ymax,fill=determiner,group=interaction(determiner,size)),alpha=.3) +
-  scale_fill_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  geom_vline(aes(xintercept=onsets$gender),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$determiner),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$name),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$noun),size=vlinesize) +
-  geom_text(data=windows,aes(label=window,x=x),y=.9,size=2) +
-  xlab("Time in ms relative to audio onset") +
-  ylab("Proportion of looks to target") +  
-  scale_x_continuous(breaks=seq(0,4000,by=400),minor_breaks = seq(200,3800,by=400)) +
-  facet_wrap(~region)
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/proportions_condsize.pdf",width=7,height=3)
-
-# only target looks
-ttoplot = toplot %>% 
-  filter(region == "target") %>% 
-  droplevels()
-
-ggplot(ttoplot, aes(x=ttime, y=proportion)) +
-  geom_line(size=1, aes(color=determiner,linetype=size)) +
-  geom_ribbon(aes(ymin=ymin,ymax=ymax,fill=determiner,group=interaction(determiner,size)),alpha=.3) +
-  scale_fill_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  scale_color_manual(values=c(cbPalette[2],cbPalette[6],cbPalette[3])) +
-  geom_vline(aes(xintercept=onsets$gender),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$determiner),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$name),size=vlinesize) +
-  geom_vline(aes(xintercept=onsets$noun),size=vlinesize) +
-  geom_text(data=windows,aes(label=window,x=x),y=.9,size=2) +
-  xlab("Time in ms relative to audio onset") +
-  ylab("Proportion of looks to target") +  
-  scale_x_continuous(breaks=seq(0,4000,by=400),minor_breaks = seq(200,3800,by=400)) 
-# theme(axis.text.x=element_text(angle=30,hjust=1,vjust=1))
-ggsave("../graphs/proportions_condsize_target.pdf",width=5,height=3)
-
-# MODELS
-tomodel = g %>%
-  select(Prime,Subject,item,condition,determiner,size,time,targetlook,competitorlook,whichword) %>%
-  filter(targetlook == 1 | competitorlook == 1) 
-
-determiner_window = tomodel %>%
-  filter(whichword=="determiner") %>%
-  mutate(targetlook=as.factor(targetlook),size=as.factor(size),time=as.factor(time)) %>%
-  mutate(csize=as.numeric(size)-mean(as.numeric(size))) %>%
-  mutate(ctime=as.numeric(time)-mean(as.numeric(time)))
-
-name_window = tomodel %>%
-  filter(whichword=="name") %>%
-  mutate(targetlook=as.factor(targetlook),size=as.factor(size),time=as.factor(time)) %>%
-  mutate(csize=as.numeric(size)-mean(as.numeric(size))) %>%
-  mutate(ctime=as.numeric(time)-mean(as.numeric(time)))
-
-m.determiner = glmer(targetlook ~ determiner*csize*ctime + (determiner*csize*ctime|Subject) + (1+determiner*csize*ctime|item), family="binomial",data=determiner_window)
-summary(m.determiner)
-
-m.name = glmer(targetlook ~ determiner*csize*ctime + (determiner*csize*ctime|Subject) + (1+determiner*csize*ctime|item), family="binomial",data=name_window)
-summary(m.name)
 
