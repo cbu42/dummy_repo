@@ -439,22 +439,26 @@ contrasts(pragtrain3_crit2$half)<-c(-0.5,0.5)
 contrasts(pragtrain3_crit2$half)
 
 
+# LINKING FUNCTION QUESTION: PLOT
 # plot eye movement proportions against selection proportions by window
 toplot_eye = pragtrain3_crit %>% 
   separate(audio,into=c("noun","size","wav")) %>% 
   # cat_small.
-  select(contrast_cond,prag_context_cond,timebin,noun,target_fix,compet_fix) %>% 
+  # select(contrast_cond,prag_context_cond,timebin,noun,target_fix,compet_fix) %>% 
+  select(contrast_cond,prag_context_cond,timebin,target_fix,compet_fix) %>% 
   filter(!(target_fix == 1 & compet_fix == 1)) %>% 
   mutate(other_fix = ifelse(target_fix + compet_fix == 0, 1, 0),
          window = ifelse(timebin <= 830, "adjective","noun")) %>% 
   pivot_longer(names_to = "Region", values_to = "fixation",cols=target_fix:other_fix) %>%
   mutate(Region = fct_recode(Region,"target" = "target_fix","competitor"="compet_fix","other"="other_fix")) %>% 
-  group_by(contrast_cond,prag_context_cond,window,Region,noun) %>% 
+  # group_by(contrast_cond,prag_context_cond,window,Region,noun) %>% 
+  group_by(contrast_cond,prag_context_cond,window,Region) %>% 
   summarize(Mean_fixations=mean(fixation)) %>% 
   rename(pragContext = prag_context_cond, cond = contrast_cond)
 
 toplot_select =  d_test %>%
-  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial,noun) %>%
+  # select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial,noun) %>%
+  select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial) %>%
   pivot_longer(names_to = "window", values_to = "selection",cols=click_prior:click_noun) %>% 
   mutate(target = case_when(loc_target_pic==selection ~ 1,
                             TRUE ~ 0)) %>% 
@@ -462,7 +466,8 @@ toplot_select =  d_test %>%
                                 TRUE ~ 0)) %>% 
   mutate(other = case_when(target + competitor == 0 ~ 1,
                                 TRUE ~ 0)) %>%
-  group_by(cond,pragContext,window,noun) %>%
+  # group_by(cond,pragContext,window,noun) %>%
+  group_by(cond,pragContext,window) %>%
   summarize(m_target=mean(target),m_competitor=mean(competitor),m_other=mean(other),ci_low_target=ci.low(target),ci_high_target=ci.high(target),ci_low_competitor=ci.low(competitor),ci_high_competitor=ci.high(competitor),ci_low_other=ci.low(other),ci_high_other=ci.high(other)) %>%
   pivot_longer(names_to="location",values_to="Mean_selections",cols=m_target:m_other) %>%
   # mutate(CILow=ifelse(location=="m_target",ci_low_target,ifelse(location=="m_competitor",ci_low_competitor,0))) %>%
@@ -473,20 +478,70 @@ toplot_select =  d_test %>%
   mutate(Region=fct_rev(Region)) %>%
   ungroup() %>% 
   mutate(window=fct_recode(window,prior="click_prior",adjective="click_adj",noun="click_noun")) %>% 
-  mutate(window = fct_relevel(window,"prior","adjective")) %>% 
   mutate(pragContext=fct_recode(pragContext,reliable="good",unreliable="bad")) %>% 
   mutate(pragContext = fct_relevel(pragContext,"reliable","unreliable")) %>% 
   mutate(cond = fct_relevel(cond,"no_contrast","contrast")) %>% 
-  select(cond, pragContext, window, Region, Mean_selections,noun)
+  # select(cond, pragContext, window, Region, Mean_selections,noun)
+  select(cond, pragContext, window, Region, Mean_selections)
 
-toplot = left_join(toplot_select, toplot_eye, by=c("cond","noun","pragContext","window","Region"))
+toplot_select %>% 
+  arrange(noun,cond,pragContext,window) %>% 
+  view()
+
+toplot_eye %>% 
+  arrange(noun,cond,pragContext,window) %>% 
+  view()
+
+# toplot = left_join(toplot_select, toplot_eye, by=c("cond","noun","pragContext","window","Region"))
+toplot = left_join(toplot_select, toplot_eye, by=c("cond","pragContext","window","Region")) %>% 
+  mutate(window = fct_relevel(window,"prior","adjective"))
 nrow(toplot)
 toplot
 
 ggplot(toplot, aes(x=Mean_selections,y=Mean_fixations,color=Region,shape=cond)) +
   geom_point() +
-  facet_wrap(~window)
+  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
+  labs(
+    shape="Contrast condition",
+    # color="Window",
+    x="Proportion of selections",
+    y="Proportion of looks (Ryskin et al 2019, Exp. 2)") +
+  xlim(0,1) +
+  ylim(0,1) +
+  facet_grid(pragContext~window)
+ggsave("../graphs/corr_faceted.pdf")
 
+ggplot(toplot, aes(x=Mean_selections,y=Mean_fixations,color=Region,shape=pragContext,group=1)) +
+  geom_smooth(method="lm") +
+  geom_point() +
+  geom_abline(intercept=0,slope=1,color="gray",linetype="dashed") +
+  scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
+  labs(
+    shape="Contrast condition",
+    # color="Window",
+    x="Proportion of selections",
+    y="Proportion of looks (Ryskin et al 2019, Exp. 2)") +
+  xlim(0,1) +
+  ylim(0,1) 
+ggsave("../graphs/corr_overall.pdf",width=5.5,height=3.5)
+
+#selections on x axis, corresponding eye movements on y axis
+# overall correlation between eye movement and decision task data
+cor.test(toplot$Mean_selections,toplot$Mean_fixations) # .89. df=22, p<.0001
+
+# correlation between eye movement and decision task data separately by time window
+cors_window = toplot %>% 
+  filter(window != "prior") %>% 
+  group_by(window) %>% 
+  summarize(Correlation=round(cor.test(Mean_selections,Mean_fixations)$estimate,2),P=round(cor.test(Mean_selections,Mean_fixations)$p.value,5))
+cors_window # .38 (in adjective window, ns); .99 in noun window, p<.0001
+
+# correlation between eye movement and decision task data separately by pragmatic reliability condition
+cors_prag = toplot %>% 
+  filter(window != "prior") %>% 
+  group_by(pragContext) %>% 
+  summarize(Correlation=round(cor.test(Mean_selections,Mean_fixations)$estimate,2),P=round(cor.test(Mean_selections,Mean_fixations)$p.value,5))
+cors_prag # .38 (in adjective window, ns); .99 in noun window, p<.0001
 
 
 
