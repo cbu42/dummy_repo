@@ -92,6 +92,7 @@ ddet = dmodel %>%
   droplevels()
 
 # look at contrasts
+?contrasts
 contrasts(ddet$pragContext)
 contrasts(ddet$cond)
 

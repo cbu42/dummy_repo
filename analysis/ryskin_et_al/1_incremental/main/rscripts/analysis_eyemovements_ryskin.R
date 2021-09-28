@@ -8,16 +8,44 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("helpers.R")
 setwd('../data')
 theme_set(theme_bw())
+getwd()
 
-# Begin: Ryskin script
 ## Experiment 2 
+
+### E2 GLMM: Prior
+# imports the prior window of eye movement data, namely 
+prior_data = read_tsv(paste0(getwd(),"/ryskin_eyetracking/PragTrain3_baseline_window_timesummLongForm.txt"),
+                           col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    trial_type = case_when(
+      trialType == 1 ~ 'test',
+      trialType == 99 ~ 'train',
+      trialType == 999 ~ 'filler'),
+    uniqueID = str_c('l',as.character(list),'_',trial_type,trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    timebin_rel = timebin/10 - 17)
+#view(prior_data[1:50,])
+
+
+
 
 ### E2 GLMM: Adj + Noun 
 
 # expt2 reading in adj+noun window data for glmm
 # reads in a large file - can be downloaded locally from Ryskin 2019's OSF page
-# pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
-pragtrain3_data = read_tsv("../data/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt",
+pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', 
+#pragtrain3_data = read_tsv("../data/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt",
                            col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
   mutate(contrast_cond = case_when(
     condWith == 0 ~ 'filler', 

@@ -386,10 +386,47 @@ ggsave(contrastive_inf, file="../graphs/contrastive_inf_over_time.pdf",width=9,h
 # noun_tar <- read.delim("ryskin_eyetracking/PragTrain3_noun_window_for_tardur_tarDURdatastruct.txt")
 # baseline = read.csv("sb_eyetracking/exp200ms_beselinedata.csv", header = TRUE)
 
+# prior window
+prior_df = read_tsv(paste0(getwd(),"/ryskin_eyetracking/PragTrain3_baseline_window_timesummLongForm.txt"),
+                      col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
+  mutate(contrast_cond = case_when(
+    condWith == 0 ~ 'filler', 
+    condWith == 1 ~ 'no_contrast',
+    condWith == 2 ~ 'contrast'),
+    prag_context_cond = case_when(
+      condBet == 10 ~ 'reliable',
+      condBet == 9 ~ 'unreliable',
+      condBet == 0 ~ 'filler'),
+    trial_type = case_when(
+      trialType == 1 ~ 'test',
+      trialType == 99 ~ 'train',
+      trialType == 999 ~ 'filler'),
+    uniqueID = str_c('l',as.character(list),'_',trial_type,trialID),
+    total_dur = (target_dur + contrast_dur + compet_dur + other_dur),
+    target_prop = target_dur/total_dur,
+    contrast_prop = contrast_dur/total_dur,
+    compet_prop = compet_dur/total_dur,
+    other_prop = other_dur/total_dur,
+    timebin_rel = timebin/10 - 17)
+#lots of zeros (and NaN and NAs)
+view(prior_df[1:100,])
+table(prior_df$total_dur)
+table(prior_df$target_dur)
+
+pragtrain3_list1 = read_tsv(paste0(getwd(),'/ryskin_eyetracking/experiments_2-3_trials_list_1.txt'))
+pragtrain3_list2 = read_tsv(paste0(getwd(),'/ryskin_eyetracking/experiments_2-3_trials_list_2.txt'))
+# pragtrain3_list1 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_1.txt')
+# pragtrain3_list2 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_2.txt')
+pragtrain3_lists = bind_rows(pragtrain3_list1,pragtrain3_list2) %>% 
+  mutate(unique_ID = str_c(as.character(counterbalance),'_',trialID))
+prior_df = prior_df %>% 
+  left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
+rm(pragtrain3_list1, pragtrain3_list2)
+
 # expt2 reading in adj+noun window data for glmm
 # reads in a large file - can be downloaded locally from Ryskin 2019's OSF page
-# pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt', col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
-pragtrain3_data = read_tsv("../data/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt",
+pragtrain3_data = read_tsv('C:/Users/cb476/OneDrive/Desktop/ALPS Lab/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt',
+# pragtrain3_data = read_tsv("../data/PragTrain3_adjnoun_for_GLMM_timesummLongForm.txt",
                            col_names=c('target_dur','contrast_dur','compet_dur','other_dur','currsubj','subject','trialnum','order','timebin','trialID','condWith','condBet','targ_loc','contrast_loc','compet_loc','list','trialType','accuracy','target_fix','target_AR1','compet_fix','compet_AR1')) %>% 
   mutate(contrast_cond = case_when(
     condWith == 0 ~ 'filler', 
@@ -411,13 +448,12 @@ pragtrain3_data = read_tsv("../data/PragTrain3_adjnoun_for_GLMM_timesummLongForm
     other_prop = other_dur/total_dur,
     timebin_rel = timebin/10 - 17)
 
-pragtrain3_list1 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_1.txt')
-pragtrain3_list2 = read_tsv('../data/ryskin_eyetracking/experiments_2-3_trials_list_2.txt')
-pragtrain3_lists = bind_rows(pragtrain3_list1,pragtrain3_list2) %>% 
-  mutate(unique_ID = str_c(as.character(counterbalance),'_',trialID))
 pragtrain3_data = pragtrain3_data %>% 
   left_join(pragtrain3_lists, by = c('uniqueID'='unique_ID'))
-#rm(pragtrain3_list1, pragtrain3_list2, pragtrain3_lists)
+rm(pragtrain3_lists)
+
+#adds prior window to pragtrain3_data
+pragtrain3_data <- rbind(prior_df, pragtrain3_data)
 
 pragtrain3_crit = pragtrain3_data %>% 
   group_by(subject,trialnum) %>% 
@@ -465,6 +501,7 @@ toplot_eye = pragtrain3_crit %>%
   ungroup() %>% 
   mutate(ymin_looks=prop_looks-ci_low_looks,ymax_looks=prop_looks+ci_high_looks) %>% 
   rename(pragContext = prag_context_cond, cond = contrast_cond)
+
 
 toplot_select =  d_test %>%
   # select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial,noun) %>%
@@ -527,7 +564,7 @@ ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=cond)) +
   xlim(0,1) +
   ylim(0,1) +
   facet_grid(pragContext~window)
-ggsave("../graphs/corr_faceted_pragcond.pdf")
+ggsave("../graphs/corr_faceted_pragcond_prior_included.pdf")
 
 ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext)) +
   geom_point() +
@@ -542,6 +579,7 @@ ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext
   xlim(0,1) +
   ylim(0,1) +
   facet_grid(cond~window)
+
 ggsave("../graphs/corr_faceted_contrastcond.pdf")
 
 ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext,group=1)) +
