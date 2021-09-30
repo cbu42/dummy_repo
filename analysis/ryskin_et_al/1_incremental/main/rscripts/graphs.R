@@ -62,7 +62,6 @@ df = df %>%
   mutate(loc_competitor_pic = case_when(feature == "small" ~ loc_small_filler,
                                         feature == "big" ~ loc_big_filler,
                                         TRUE ~ "NA"))
-df$response_times
 
 ### PULL RESPONSE TIMES
 df$response_temp = NA
@@ -412,6 +411,8 @@ prior_df = read_tsv(paste0(getwd(),"/ryskin_eyetracking/PragTrain3_baseline_wind
 view(prior_df[1:100,])
 table(prior_df$total_dur)
 table(prior_df$target_dur)
+table(prior_df$compet_fix)
+nrow(prior_df)
 
 pragtrain3_list1 = read_tsv(paste0(getwd(),'/ryskin_eyetracking/experiments_2-3_trials_list_1.txt'))
 pragtrain3_list2 = read_tsv(paste0(getwd(),'/ryskin_eyetracking/experiments_2-3_trials_list_2.txt'))
@@ -492,16 +493,20 @@ toplot_eye = pragtrain3_crit %>%
   select(contrast_cond,prag_context_cond,timebin,target_fix,compet_fix) %>% 
   filter(!(target_fix == 1 & compet_fix == 1)) %>% 
   mutate(other_fix = ifelse(target_fix + compet_fix == 0, 1, 0),
-         window = ifelse(timebin <= 830, "adjective","noun")) %>% 
+         window = ifelse(timebin <=200, "prior", ifelse(timebin <= 830, "adjective","noun"))) %>% 
   pivot_longer(names_to = "Region", values_to = "fixation",cols=target_fix:other_fix) %>%
   mutate(Region = fct_recode(Region,"target" = "target_fix","competitor"="compet_fix","other"="other_fix")) %>% 
   # group_by(contrast_cond,prag_context_cond,window,Region,noun) %>% 
   group_by(contrast_cond,prag_context_cond,window,Region) %>% 
-  summarize(prop_looks=mean(fixation),ci_low_looks=ci.low(fixation),ci_high_looks=ci.high(fixation)) %>% 
+  #summarize(prop_looks=mean(fixation),ci_low_looks=ci.low(fixation),ci_high_looks=ci.high(fixation)) %>%
+  summarize(prop_looks=mean(fixation)) %>% 
   ungroup() %>% 
-  mutate(ymin_looks=prop_looks-ci_low_looks,ymax_looks=prop_looks+ci_high_looks) %>% 
+  #mutate(ymin_looks=prop_looks-ci_low_looks,ymax_looks=prop_looks+ci_high_looks) %>% 
   rename(pragContext = prag_context_cond, cond = contrast_cond)
 
+
+#ryskin had this plot
+#plot by timebin and plot fixations over time without plotting against selections
 
 toplot_select =  d_test %>%
   # select(workerid,pragContext,cond,click_prior,click_adj,click_noun,loc_target_pic,loc_competitor_pic,loc_contrast,loc_big_filler,loc_small_filler,instruction,trial_number,trial,noun) %>%
@@ -546,15 +551,14 @@ toplot_select =  d_test %>%
 # toplot = left_join(toplot_select, toplot_eye, by=c("cond","noun","pragContext","window","Region"))
 toplot = left_join(toplot_select, toplot_eye, by=c("cond","pragContext","window","Region")) %>% 
   mutate(window = fct_relevel(window,"prior","adjective")) %>% 
-  mutate(ymin_selections = as.numeric(ymin_selections),ymax_selections = as.numeric(ymax_selections),prop_selections = as.numeric(prop_selections)) %>% 
-  filter(window != "prior")
+  mutate(ymin_selections = as.numeric(ymin_selections),ymax_selections = as.numeric(ymax_selections),prop_selections = as.numeric(prop_selections))
 nrow(toplot)
 toplot
 
 ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=cond)) +
   geom_point() +
-  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
-  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
+  #geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  #geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
   scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
   labs(
     shape="Contrast condition",
@@ -568,8 +572,8 @@ ggsave("../graphs/corr_faceted_pragcond_prior_included.pdf")
 
 ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext)) +
   geom_point() +
-  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
-  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
+  #geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  #geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
   scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
   labs(
     shape="Contrast condition",
@@ -586,8 +590,8 @@ ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext
   geom_abline(intercept=0,slope=1,color="gray",linetype="dashed") +
   geom_smooth(method="lm") +
   geom_point() +
-  geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
-  geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
+  #geom_errorbar(aes(ymin=ymin_looks,ymax=ymax_looks),width=0) +
+  #geom_errorbarh(aes(xmin=ymin_selections,xmax=ymax_selections),height=0) +
   scale_color_manual(values=c(cbPalette[7],cbPalette[1],cbPalette[4],cbPalette[5])) +
   labs(
     shape="Contrast condition",
@@ -598,15 +602,18 @@ ggplot(toplot, aes(x=prop_selections,y=prop_looks,color=Region,shape=pragContext
   ylim(0,1) 
 ggsave("../graphs/corr_overall.pdf",width=5.5,height=3.5)
 
+#TODOL report these correlations (w/ facets, report the correlations with it)
+#facet by window
+#also include by-item for unreliable
 #selections on x axis, corresponding eye movements on y axis
 # overall correlation between eye movement and decision task data
 cor.test(toplot$prop_selections,toplot$prop_looks) # .88. df=22, p<.0001
 
 # correlation between eye movement and decision task data separately by time window
 cors_window = toplot %>% 
-  filter(window != "prior") %>% 
   group_by(window) %>% 
   summarize(Correlation=round(cor.test(prop_selections,prop_looks)$estimate,2),P=round(cor.test(prop_selections,prop_looks)$p.value,5))
+cors_window
 cors_window # .38 (in adjective window, ns); .99 in noun window, p<.0001
 
 # correlation between eye movement and decision task data separately by pragmatic reliability condition
